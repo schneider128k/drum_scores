@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Songsterr — drum scores</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #1a1d24;
+      --fg: #e6e6e6;
+      --muted: #9aa0a6;
+      --accent: #ffb454;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+    .layout { max-width: 720px; margin: 0 auto; }
+    h1 {
+      font-size: 24px; font-weight: 600; margin: 0 0 4px 0;
+      letter-spacing: -0.01em;
+    }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+    h2 {
+      font-size: 14px; font-weight: 500; color: var(--muted);
+      letter-spacing: 0.04em; text-transform: uppercase;
+      margin: 28px 0 8px 0;
+    }
+    ul.songs { list-style: none; margin: 0; padding: 0; }
+    ul.songs li { margin: 0; }
+    ul.songs a {
+      display: block;
+      padding: 12px 16px;
+      background: var(--panel);
+      color: var(--fg);
+      text-decoration: none;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      transition: background 0.1s;
+    }
+    ul.songs a:hover { background: #252932; }
+    ul.songs .artist { color: var(--accent); font-weight: 500; }
+    ul.songs .dash { color: var(--muted); }
+    ul.songs .title { color: var(--fg); }
+    .empty { color: var(--muted); }
+    code {
+      background: var(--panel);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 12px;
+    }
+    .footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <h1>Drum scores</h1>
+    <div class="subtitle">Synth playback with engraved sheet music. Tap a song.</div>
+    <h2>Songs</h2>
+    <ul class="songs">
+      <li><a href="songs/ghost-square-hammer.html"><span class="artist">Ghost</span><span class="dash"> — </span><span class="title">Square Hammer</span></a></li>
+      <li><a href="songs/nirvana-come-as-you-are.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Come As You Are</span></a></li>
+      <li><a href="songs/nirvana-heart-shaped-box.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Heart-Shaped Box</span></a></li>
+      <li><a href="songs/nirvana-in-bloom.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">In Bloom</span></a></li>
+      <li><a href="songs/nirvana-smells-like-teen-spirit.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Smells Like Teen Spirit</span></a></li>
+      <li><a href="songs/pixies-wave-of-mutilation.html"><span class="artist">Pixies</span><span class="dash"> — </span><span class="title">Wave Of Mutilation</span></a></li>
+      <li><a href="songs/survivor-eye-of-the-tiger.html"><span class="artist">Survivor</span><span class="dash"> — </span><span class="title">Eye Of The Tiger</span></a></li>
+    </ul>
+    <div class="footer">
+      Engraving: LilyPond. Audio: Tone.js synths (diagnostic, not sampled).
+    </div>
+  </div>
+</body>
+</html>
