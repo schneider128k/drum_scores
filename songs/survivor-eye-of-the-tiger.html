@@ -99,19 +99,19 @@
     }
     button.primary:hover:not(:disabled) { background: #8a6628; }
 
-    /* Icon-only transport buttons. Sized for finger taps on iPad. */
+    /* Icon-only transport buttons. iOS HIG: 44pt minimum touch target. */
     .controls button.transport {
       flex: 0 0 auto;
-      min-width: 40px;
-      height: 32px;
-      font-size: 14px;
-      padding: 0 12px;
+      min-width: 44px;
+      height: 44px;
+      font-size: 16px;
+      padding: 0 14px;
     }
     .controls button.sync {
       flex: 0 0 auto;
-      height: 32px;
-      font-size: 12px;
-      padding: 0 10px;
+      height: 44px;
+      font-size: 13px;
+      padding: 0 14px;
     }
     .controls .spacer { flex: 1 1 auto; }
     .controls .tempo-group {
@@ -122,11 +122,11 @@
       font-size: 12px;
     }
     .controls button.speed-btn {
-      flex: 0 0 28px;
-      width: 28px;
-      height: 28px;
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
       padding: 0;
-      font-size: 14px;
+      font-size: 18px;
       font-weight: 600;
     }
     .controls .speed-value {
@@ -277,30 +277,34 @@
     }
 
     /* Pager (‹ 1/4 ›) for manual flips between sessions or when paused.
-       Top-right of the sheet so it doesn't compete with the noteheads. */
+       Footer of the sheet panel, centered — same position a real page
+       turner looks for the page-turn cue. iOS HIG-sized buttons (44pt)
+       would crowd the score corner; below the music they're out of the
+       way and within easy reach. */
     .pager {
-      position: absolute;
-      top: 8px;
-      right: 12px;
       display: flex;
+      justify-content: center;
       align-items: center;
-      gap: 4px;
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--paper-rule);
       font-family: ui-monospace, "SF Mono", Consolas, monospace;
-      font-size: 11px;
+      font-size: 13px;
       color: #888;
       user-select: none;
     }
     .pager[hidden] { display: none; }
     .pager button.pager-btn {
-      flex: 0 0 26px;
-      width: 26px;
-      height: 26px;
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
       padding: 0;
       background: #f7f7f7;
       color: #555;
       border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 14px;
+      border-radius: 6px;
+      font-size: 20px;
       font-weight: 600;
       line-height: 1;
     }
@@ -309,7 +313,7 @@
       color: #222;
     }
     .pager button.pager-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .pager-label { min-width: 36px; text-align: center; }
+    .pager-label { min-width: 48px; text-align: center; }
 
     /* ── Footer / errors ──────────────────────────────────────────────── */
     .footer {
@@ -865,11 +869,25 @@ function updateCursor(t) {
   }
   EVENT_INDEX = newIndex;
 
-  // Auto-flip to the page containing the now-active event. If the user
-  // manually paged ahead during pause, this snaps back the moment the
-  // cursor lands on a different page — which is what they'd expect.
+  // Auto-flip page. Two cases:
+  //   1. The cursor's current event is the LAST event on its page, AND
+  //      the next event lives on a later page. Flip *now* so the
+  //      student sees what's coming while they're still playing the
+  //      final beat. Same principle as a human page-turner: flip on
+  //      the last bar, not after it.
+  //   2. Otherwise, just snap to the page containing the active event.
+  //      Covers rewinds and manual page changes that the cursor then
+  //      catches up with.
+  // The brief moment between "last event of page P" and "first event
+  // of page P+1" leaves no notehead highlighted — that's fine. The
+  // student already played the last beat of page P; they need to see
+  // page P+1 next.
   if (newIndex >= 0 && EVENT_TO_PAGE) {
-    const targetPage = EVENT_TO_PAGE[newIndex];
+    const eventPage = EVENT_TO_PAGE[newIndex];
+    const nextIdx = newIndex + 1;
+    const isLastOfPage = nextIdx < EVENT_TO_PAGE.length
+                      && EVENT_TO_PAGE[nextIdx] > eventPage;
+    const targetPage = isLastOfPage ? EVENT_TO_PAGE[nextIdx] : eventPage;
     if (targetPage !== CURRENT_PAGE) showPage(targetPage);
   }
 }
