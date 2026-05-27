@@ -1739,14 +1739,18 @@ function setMode(newMode) {
       catch (_) { /* iframe transient state, harmless */ }
     }
   } else if (YT_PLAYER && YT_READY) {
-    // Leaving a YT mode: pause + mute + rewind. Don't tear down the iframe;
-    // re-creating it costs a network round-trip and re-hits the Referer
-    // restriction. Keeping it loaded means the next switch is instant.
-    try {
-      YT_PLAYER.pauseVideo();
-      YT_PLAYER.mute();
-      YT_PLAYER.seekTo(SCHEDULE.youtube_offset || 0, true);
-    } catch (_) { /* harmless */ }
+    // Leaving a YT mode: mute only. Don't tear down the iframe — keeping
+    // it loaded means the next switch is instant. Don't pause/seek either:
+    //
+    //   1. setMode now force-calls onStop on any active session, which
+    //      cueVideoById's YT back to offset. Re-cueing here is redundant.
+    //   2. seekTo() on a CUED player STARTS PLAYBACK per the YT IFrame
+    //      API spec ("If the function is called from another state —
+    //      playing, video cued, etc. — the player will play the video.").
+    //      Manifested as YT silently scrubbing forward in the iframe
+    //      after the user clicked Sampled following a Stop.
+    try { YT_PLAYER.mute(); }
+    catch (_) { /* iframe transient state, harmless */ }
   }
 
   // Picker is only meaningful when YT is in play AND there's a real
