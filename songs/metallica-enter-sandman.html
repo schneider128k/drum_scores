@@ -238,11 +238,32 @@
       width: 100%;
       height: 100%;
       border: 0;
-      /* Clickable on purpose: the student needs to hit YouTube's
-         "Skip Ad" button during prerolls. Safe because the drum
-         cursor never starts implicitly — only when "🎵 Sync" is
-         pressed, which reads YT's actual position at click time. */
     }
+
+    /* Transparent gate over the iframe BEFORE the user has pressed Play.
+       Tapping the YT area should act exactly like tapping the top Play
+       button — never start YouTube via YT's own click-to-play, which
+       would bypass our transport state. Once Play is pressed the overlay
+       hides, exposing the iframe so the student can tap "Skip Ad" during
+       prerolls. Stop puts the overlay back. */
+    .yt-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.30);
+      color: rgba(255,255,255,0.92);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.8);
+      transition: background 0.1s;
+    }
+    .yt-overlay:hover { background: rgba(0,0,0,0.45); }
+    .yt-overlay[hidden] { display: none; }
 
     /* ── Sheet music panel (light "paper") ────────────────────────────── */
     .sheet {
@@ -342,11 +363,12 @@
       </div>
 
       <div class="controls">
+        <!-- Single transport button. Label adapts to state:
+               IDLE     ▶          tap → start (YT preroll or sampled drums)
+               PRESYNC  ▶ Sync     tap → sync cursor to YT now (ad just ended)
+               PLAYING  ⏸          tap → pause
+               PAUSED   ▶          tap → resume (re-sync to YT if YT mode) -->
         <button id="btn-playpause" class="primary transport" disabled aria-label="Play">▶</button>
-        <button id="btn-start-music" class="sync" disabled
-                title="After any ad ends and the song begins, tap to sync the cursor to YouTube.">
-          🎵 Sync
-        </button>
         <button id="btn-stop" class="transport" disabled aria-label="Stop">⏹</button>
 
         <span class="spacer"></span>
@@ -386,9 +408,13 @@
       </div>
     </div>
 
-    <!-- YouTube embed. Hidden until player.js creates a YT.Player here. -->
+    <!-- YouTube embed. Hidden until player.js creates a YT.Player here.
+         The yt-overlay is a transparent click-gate; player.js hides it
+         after the first Play press and re-shows it on Stop. -->
     <div class="yt-wrap" id="yt-wrap" hidden>
       <div id="yt"></div>
+      <div id="yt-overlay" class="yt-overlay"
+           role="button" tabindex="0" aria-label="Start playback">▶ Tap Play above</div>
     </div>
 
     <!-- Sheet music (light) — one page at a time. -->
@@ -565,8 +591,7 @@ function ytAudible()    { return CURRENT_MODE !== MODE.SAMPLED_DRUMS; }
 const $ = (id) => document.getElementById(id);
 const elTitle = $('title');
 const elArtist = $('artist');
-const elBtnPlayPause = $('btn-playpause');  // toggle: ▶ while paused, ⏸ while playing
-const elBtnStartMusic = $('btn-start-music');
+const elBtnPlayPause = $('btn-playpause');  // smart toggle, see playerState()
 const elBtnStop = $('btn-stop');
 const elBar = $('status-bar');
 const elMarker = $('status-marker');
@@ -579,6 +604,7 @@ const elBtnTempoDown = $('btn-tempo-down');
 const elBtnTempoUp = $('btn-tempo-up');
 const elTempoValue = $('tempo-value');
 const elYtWrap = $('yt-wrap');
+const elYtOverlay = $('yt-overlay');
 const elModeRow = $('mode-row');
 const elYtPickWrap = $('yt-pick-wrap');
 const elYtPick = $('yt-pick');
@@ -617,21 +643,26 @@ async function init() {
   elPosition.textContent = `0:00 / ${formatTime(SCHEDULE.total_seconds)}`;
 
   elBtnPlayPause.addEventListener('click', onPlayPauseToggle);
-  elBtnStartMusic.addEventListener('click', onStartMusic);
   elBtnStop.addEventListener('click', onStop);
+  // Overlay routes any tap on the YT thumbnail through the same Play
+  // logic — YouTube's own click-to-play would bypass our transport
+  // state and confuse the cursor's "Sync" expectation. Enter activates
+  // it for keyboard users too.
+  if (elYtOverlay) {
+    elYtOverlay.addEventListener('click', onPlayPauseToggle);
+    elYtOverlay.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        onPlayPauseToggle();
+      }
+    });
+  }
   elBtnTempoDown.addEventListener('click', onTempoDown);
   elBtnTempoUp.addEventListener('click', onTempoUp);
   elBtnPagePrev.addEventListener('click', () => showPage(CURRENT_PAGE - 1));
   elBtnPageNext.addEventListener('click', () => showPage(CURRENT_PAGE + 1));
   window.addEventListener('keydown', onKeyDown);
   updateTempoUi();
-
-  // Sync button is only meaningful when a YouTube video is attached;
-  // hide it entirely in sampled-only mode so the transport row reads
-  // cleanly as Play/Stop.
-  if (!SCHEDULE.youtube_id) {
-    elBtnStartMusic.hidden = true;
-  }
 
   // YouTube sync (M6g+): only show the mode row + YT machinery when the
   // schedule names a video. Initial mode is PLAY_ALONG; the student can
@@ -653,6 +684,7 @@ async function init() {
     populateYtPicker();
     initYouTube();
   }
+  refreshYtOverlay();
   // else: CURRENT_MODE stays SAMPLED_DRUMS, mode-row stays hidden, the page
   // behaves identically to a pre-6g player (drums only).
 
@@ -1013,17 +1045,82 @@ function scheduleAll() {
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
+//
+// The transport is a 4-state FSM:
+//
+//   IDLE        nothing started; tap ▶ starts YT (or sampled drums)
+//   PRESYNC     YT playing (preroll/ad), cursor not running;
+//               tap ▶ Sync starts the cursor from YT's current time
+//   PLAYING     YT + cursor + drums, all in sync; tap ⏸ pauses
+//   PAUSED      session paused mid-song; tap ▶ resumes (re-syncs to YT)
+//
+// Sampled-only mode skips PRESYNC entirely (no ad to wait through).
+// One Play button reads the state and dispatches to the right action;
+// Stop remains a separate escape hatch.
 
-// Single transport button: ▶ when paused/stopped, ⏸ while playing. Routes
-// to onPlay or onPause based on IS_PLAYING. Standard media-player UX.
-function onPlayPauseToggle() {
-  if (IS_PLAYING) onPause();
-  else onPlay();
+const STATE = Object.freeze({
+  IDLE:    'IDLE',
+  PRESYNC: 'PRESYNC',
+  PLAYING: 'PLAYING',
+  PAUSED:  'PAUSED',
+});
+
+function playerState() {
+  if (IS_PLAYING) return STATE.PLAYING;
+  // !IS_PLAYING from here
+  if (elBtnStop.disabled) return STATE.IDLE;
+  // Session active. PRESYNC = YT started but cursor hasn't been synced
+  // yet (only reachable in YT modes; SETTINGS_LOCKED flips on first Sync).
+  if (ytNeeded() && !SETTINGS_LOCKED) return STATE.PRESYNC;
+  return STATE.PAUSED;
 }
 
-function setPlayPauseIcon(playing) {
-  elBtnPlayPause.textContent = playing ? '⏸' : '▶';
-  elBtnPlayPause.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+async function onPlayPauseToggle() {
+  switch (playerState()) {
+    case STATE.PLAYING:
+      onPause();                       // → PAUSED
+      return;
+    case STATE.IDLE:
+      await onPlay();                  // → PRESYNC (YT) or PLAYING (sampled)
+      return;
+    case STATE.PRESYNC:
+      await onStartMusic();            // → PLAYING (first sync)
+      return;
+    case STATE.PAUSED:
+      if (ytNeeded() && YT_PLAYER && YT_READY) {
+        YT_PLAYER.playVideo();
+        await onStartMusic();          // re-sync cursor to YT's current time
+      } else {
+        await onPlay();                // sampled: just resume Tone.Transport
+      }
+      return;
+  }
+}
+
+function refreshPlayPauseLabel() {
+  switch (playerState()) {
+    case STATE.PLAYING:
+      elBtnPlayPause.textContent = '⏸';
+      elBtnPlayPause.setAttribute('aria-label', 'Pause');
+      elBtnPlayPause.title = 'Pause';
+      return;
+    case STATE.PRESYNC:
+      elBtnPlayPause.textContent = '▶ Sync';
+      elBtnPlayPause.setAttribute('aria-label', 'Sync drums to YouTube');
+      elBtnPlayPause.title = 'Sync — tap when the song begins';
+      return;
+    case STATE.PAUSED:
+      elBtnPlayPause.textContent = '▶';
+      elBtnPlayPause.setAttribute('aria-label', 'Resume');
+      elBtnPlayPause.title = 'Resume';
+      return;
+    case STATE.IDLE:
+    default:
+      elBtnPlayPause.textContent = '▶';
+      elBtnPlayPause.setAttribute('aria-label', 'Play');
+      elBtnPlayPause.title = 'Play';
+      return;
+  }
 }
 
 async function onPlay() {
@@ -1041,21 +1138,23 @@ async function onPlay() {
   if (ytNeeded() && YT_PLAYER && YT_READY) {
     YT_PLAYER.setPlaybackRate(TEMPO_FACTOR);
     YT_PLAYER.playVideo();
-    // Leave the toggle on ▶ — the drum cursor isn't playing yet (still
-    // waiting for Sync). Stop becomes available so the user can bail.
-    elBtnStartMusic.disabled = false;
+    // IDLE → PRESYNC: button label flips to "▶ Sync"; the cursor is
+    // armed but waiting for the student to tap once the ad clears.
     elBtnStop.disabled = false;
+    refreshPlayPauseLabel();
+    refreshYtOverlay();
     return;
   }
 
+  // IDLE → PLAYING (sampled mode skips PRESYNC entirely).
   await Tone.start();
   if (!SCHEDULED) scheduleAll();
   Tone.Transport.start();
   LAST_PERF_TIME = performance.now() / 1000;
   IS_PLAYING = true;
   startUiLoop();
-  setPlayPauseIcon(true);
   elBtnStop.disabled = false;
+  refreshPlayPauseLabel();
 }
 
 async function onStartMusic() {
@@ -1088,22 +1187,20 @@ async function onStartMusic() {
   LAST_YT_DRIFT_CHECK_WALL = 0;  // immediate drift check on next UI tick
   IS_PLAYING = true;
   startUiLoop();
-  setPlayPauseIcon(true);
   console.log(`[player] cursor started at songSeconds=${songSeconds.toFixed(2)} (YT t=${ytNow.toFixed(2)}, offset=${ytOffset.toFixed(2)})`);
-  // First Start sync click commits the session: lock picker, mode, speed.
-  // Stays locked through Pause; only Stop unlocks (handled in onStop).
+  // PRESYNC → PLAYING (or PAUSED → PLAYING in YT mode). Locking picker,
+  // mode, and speed for the rest of the session — they stay locked
+  // through Pause; only Stop unlocks (handled in onStop).
   SETTINGS_LOCKED = true;
   applySettingsLock();
+  refreshPlayPauseLabel();
 }
 
 function onPause() {
   Tone.Transport.pause();
   IS_PLAYING = false;
   if (ytNeeded() && YT_PLAYER && YT_READY) YT_PLAYER.pauseVideo();
-  setPlayPauseIcon(false);
-  // Cursor was already running — Sync stays available so the student can
-  // re-align mid-song if YT drifted.
-  elBtnStartMusic.disabled = !ytNeeded();
+  refreshPlayPauseLabel();
 }
 
 function onStop({ cueYt = true } = {}) {
@@ -1128,10 +1225,14 @@ function onStop({ cueYt = true } = {}) {
       } catch (_) { /* harmless */ }
     }
   }
-  setPlayPauseIcon(false);
   elBtnPlayPause.disabled = false;
-  elBtnStartMusic.disabled = true;
   elBtnStop.disabled = true;
+  // PAUSED/PLAYING/PRESYNC → IDLE.
+  refreshPlayPauseLabel();
+  // Restore the click-gate so the next session starts from the same
+  // "tap Play first" affordance instead of from a bare iframe that
+  // YouTube would treat as play-on-click.
+  refreshYtOverlay();
   // Stop ends the session: picker, mode, and speed become editable again.
   SETTINGS_LOCKED = false;
   applySettingsLock();
@@ -1412,6 +1513,15 @@ function onYtStateChange(ev) {
   }
 }
 
+function refreshYtOverlay() {
+  // Single source of truth for the YT click-gate's visibility. Shown iff
+  // we're in a YT mode AND no session is yet committed (Stop button
+  // disabled is the canonical "no session" signal). In SAMPLED_DRUMS the
+  // overlay would just sit over a muted thumbnail — pointless, so hide.
+  if (!elYtOverlay) return;
+  elYtOverlay.hidden = !ytNeeded() || !elBtnStop.disabled;
+}
+
 function pickDefaultVideo() {
   // Override SCHEDULE.youtube_id with the Full mix candidate when present.
   // The pipeline now picks Full mix as the baked default, but legacy data
@@ -1559,7 +1669,7 @@ async function onYtPick(ev) {
   // new video. Pass cueYt:false because we cue the NEW video below;
   // letting onStop cue the OLD one too causes a race inside the iframe
   // where the new cue gets dropped and YT keeps showing the old video.
-  if (IS_PLAYING || !elBtnStartMusic.disabled) onStop({ cueYt: false });
+  if (playerState() !== STATE.IDLE) onStop({ cueYt: false });
 
   // Each video has its own sync offset AND its own per-measure anchors
   // (Songsterr's /api/video-points points[]). Update the schedule from
@@ -1649,6 +1759,7 @@ function setMode(newMode) {
   // e.g. 85% in sampled mode → 75% when switching to Play along.
   setTempoFactor(TEMPO_FACTOR);
 
+  refreshYtOverlay();
   maybeEnablePlay();
 }
 
