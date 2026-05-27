@@ -35,18 +35,28 @@
     }
 
     /* Top row puts the control panel (left) and the audio-source slot
-       (right) side-by-side, so the slot doesn't burn vertical real estate
-       the score needs. Stacks on narrow screens. */
+       (right) side-by-side. align-items:stretch makes both children the
+       same height — the panel's natural height (driven by its content)
+       fixes the row, and the video's aspect-ratio derives its width from
+       that height. Function drives form: controls anchor the layout,
+       the decorative video adapts. Stacks on narrow screens. */
     .top-row {
       display: flex;
       gap: 12px;
-      align-items: flex-start;
+      align-items: stretch;
     }
     .top-row .panel { flex: 1 1 auto; min-width: 0; }
-    .top-row .yt-wrap { flex: 0 0 320px; }
+    .top-row .yt-wrap {
+      flex: 0 0 auto;
+      /* height inherited from stretch; width derived via aspect-ratio */
+    }
     @media (max-width: 700px) {
-      .top-row { flex-direction: column; align-items: stretch; }
-      .top-row .yt-wrap { flex: 0 0 auto; margin: 0 auto; }
+      .top-row { flex-direction: column; }
+      .top-row .yt-wrap {
+        width: 320px;
+        max-width: 100%;
+        margin: 0 auto;
+      }
     }
 
     /* ── Control panel (dark, compact) ─────────────────────────────────── */
@@ -193,8 +203,6 @@
        in Drums source (no iframe → no slot needed). */
     .yt-wrap {
       position: relative;
-      width: 320px;
-      max-width: 100%;
       aspect-ratio: 16 / 9;
       background: #000;
       border-radius: 8px;
