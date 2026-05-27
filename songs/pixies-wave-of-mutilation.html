@@ -171,20 +171,32 @@
       transition: width 0.05s linear;
     }
 
-    /* ── Audio source panel (200×112, 16:9) ──────────────────────────── */
+    /* ── Audio source panel (320×180, 16:9) ──────────────────────────── */
+    /* Outer .yt-wrap is the positioning context for the picker chip and
+       its dropdown menu — NO overflow:hidden, so the menu can extend below
+       the frame without being clipped. The inner .yt-frame owns the visual
+       region (iframe / placeholder / overlay) and its own overflow:hidden
+       for the rounded corners. */
     .yt-wrap {
       position: relative;
-      width: 200px;
-      height: 112px;
+      width: 320px;
+      max-width: 100%;
+      aspect-ratio: 16 / 9;
       margin: 0 auto;
+    }
+    .yt-wrap[hidden] { display: none; }
+
+    .yt-frame {
+      position: relative;
+      width: 100%;
+      height: 100%;
       background: #000;
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
     }
-    .yt-wrap[hidden] { display: none; }
-    .yt-wrap iframe,
-    .yt-wrap #yt {
+    .yt-frame iframe,
+    .yt-frame #yt {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -208,7 +220,7 @@
       justify-content: center;
       background: rgba(0,0,0,0.30);
       color: rgba(255,255,255,0.92);
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 500;
       letter-spacing: 0.02em;
       text-shadow: 0 1px 6px rgba(0,0,0,0.8);
@@ -218,7 +230,7 @@
     .yt-overlay[hidden] { display: none; }
 
     /* Placeholder shown in the audio-source slot when Drums-only is
-       picked (iframe destroyed). Keeps the picker button's backdrop. */
+       picked (iframe destroyed). Keeps the picker chip's backdrop. */
     .yt-placeholder {
       position: absolute;
       inset: 0;
@@ -227,45 +239,49 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
+      gap: 6px;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 12px;
       letter-spacing: 0.02em;
     }
     .yt-placeholder[hidden] { display: none; }
-    .yt-placeholder-icon { font-size: 28px; line-height: 1; }
+    .yt-placeholder-icon { font-size: 38px; line-height: 1; }
 
-    /* Source picker — single tappable affordance in the slot's top-right.
-       Replaces the old mode radios + video dropdown. */
+    /* Source picker — labeled chip in the slot's top-right showing the
+       current source. Tap → menu drops below. 44pt height per iOS HIG. */
     .src-picker-btn {
       position: absolute;
-      top: 6px;
-      right: 6px;
-      z-index: 3;            /* above .yt-overlay (z-index: 2) */
-      width: 32px;
-      height: 32px;
-      padding: 0;
-      background: rgba(0, 0, 0, 0.55);
+      top: 8px;
+      right: 8px;
+      z-index: 3;                          /* above .yt-overlay (z-index: 2) */
+      height: 44px;
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.62);
       color: #fff;
       border: 0;
-      border-radius: 6px;
-      font-size: 16px;
-      font-weight: 600;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
       line-height: 1;
       cursor: pointer;
     }
-    .src-picker-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.78); }
+    .src-picker-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.82); }
     .src-picker-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .src-picker-caret { font-size: 11px; opacity: 0.75; }
 
     .src-picker-menu {
       position: absolute;
-      top: 42px;
-      right: 6px;
+      top: 60px;                           /* 8 (chip top) + 44 (chip h) + 8 (gap) */
+      right: 8px;
       z-index: 4;
       background: var(--panel);
       border: 1px solid #3a3f4d;
-      border-radius: 6px;
-      min-width: 140px;
+      border-radius: 8px;
+      min-width: 160px;
       padding: 4px;
       display: flex;
       flex-direction: column;
@@ -277,12 +293,13 @@
       background: transparent;
       color: var(--fg);
       border: 0;
-      border-radius: 4px;
-      padding: 8px 10px;
+      border-radius: 6px;
+      padding: 10px 12px;
       font-family: inherit;
-      font-size: 12px;
+      font-size: 13px;
       text-align: left;
       cursor: pointer;
+      min-height: 44px;                    /* iOS HIG touch target */
     }
     .src-picker-row:hover:not(:disabled) { background: #2a2e38; }
     .src-picker-row.is-selected {
@@ -290,7 +307,7 @@
       font-weight: 600;
     }
     .src-picker-row.is-selected::before {
-      content: '\2713\00a0';   /* ✓ + nbsp */
+      content: '\2713\00a0';               /* ✓ + nbsp */
     }
 
     /* ── Sheet music panel (light "paper") ────────────────────────────── */
@@ -424,20 +441,25 @@
 
     </div>
 
-    <!-- Audio-source slot. In Song/Backing it hosts the iframe; in Drums
-         it shows the placeholder. The picker button (top-right) is the
-         single audio-source affordance — replaces the old mode radios
-         and video dropdown. Hidden when the schedule has no YT video. -->
+    <!-- Audio-source slot. The inner .yt-frame hosts the iframe (Original /
+         Backing) or the placeholder (Drums only); its overflow:hidden gives
+         the rounded corners. The chip + menu sit on the outer .yt-wrap so
+         the menu can extend below the frame without being clipped. -->
     <div class="yt-wrap" id="yt-wrap" hidden>
-      <div id="yt"></div>
-      <div id="yt-placeholder" class="yt-placeholder" hidden>
-        <span class="yt-placeholder-icon" aria-hidden="true">&#x1F941;</span>
-        <span class="yt-placeholder-label">Drums only</span>
+      <div class="yt-frame">
+        <div id="yt"></div>
+        <div id="yt-placeholder" class="yt-placeholder" hidden>
+          <span class="yt-placeholder-icon" aria-hidden="true">&#x1F941;</span>
+          <span class="yt-placeholder-label">Drums only</span>
+        </div>
+        <div id="yt-overlay" class="yt-overlay"
+             role="button" tabindex="0" aria-label="Start playback">▶ Tap Play above</div>
       </div>
-      <div id="yt-overlay" class="yt-overlay"
-           role="button" tabindex="0" aria-label="Start playback">▶ Tap Play above</div>
       <button id="src-picker-btn" class="src-picker-btn" type="button"
-              aria-haspopup="menu" aria-label="Audio source">&#x22EF;</button>
+              aria-haspopup="menu" aria-label="Audio source">
+        <span id="src-picker-label">Original</span>
+        <span class="src-picker-caret" aria-hidden="true">&#x25BE;</span>
+      </button>
       <div id="src-picker-menu" class="src-picker-menu" role="menu" hidden></div>
     </div>
 
@@ -1682,10 +1704,13 @@ function defaultSource() {
 
 // ── Source picker UI ─────────────────────────────────────────────────────────
 
+// `label` is the menu row text; `chip` is the shorter text on the picker
+// button itself (where vertical space is tighter and "Drums only" reads
+// long next to a caret).
 const SOURCE_ROWS = [
-  { src: SOURCE.SONG,    label: 'Song' },
-  { src: SOURCE.BACKING, label: 'Backing' },
-  { src: SOURCE.DRUMS,   label: 'Drums only' },
+  { src: SOURCE.SONG,    label: 'Original',   chip: 'Original' },
+  { src: SOURCE.BACKING, label: 'Backing',    chip: 'Backing' },
+  { src: SOURCE.DRUMS,   label: 'Drums only', chip: 'Drums' },
 ];
 
 function buildSourceMenu() {
@@ -1708,6 +1733,12 @@ function buildSourceMenu() {
 }
 
 function refreshSourcePickerUi() {
+  // Update the chip's label to reflect the current source.
+  const labelEl = $('src-picker-label');
+  if (labelEl) {
+    const row = SOURCE_ROWS.find(r => r.src === CURRENT_SOURCE);
+    if (row) labelEl.textContent = row.chip || row.label;
+  }
   // Mark the current row as selected.
   if (elSrcPickerMenu) {
     for (const btn of elSrcPickerMenu.querySelectorAll('[data-source]')) {
@@ -1715,7 +1746,7 @@ function refreshSourcePickerUi() {
     }
   }
   // In DRUMS the iframe slot is hidden (it's been destroyed); show the
-  // placeholder in its stead so the picker button still has a backdrop.
+  // placeholder in its stead so the chip still has a backdrop.
   const ytSlot = $('yt');
   if (CURRENT_SOURCE === SOURCE.DRUMS) {
     if (ytSlot) ytSlot.style.display = 'none';
@@ -1765,15 +1796,21 @@ function destroyYouTube() {
   // YT.Player.destroy() removes the iframe but not always the wrapper
   // element it created — recreate a fresh <div id="yt"> so the next
   // initYouTube() / new YT.Player('yt', ...) has a target to attach to.
+  // Fresh div lives inside .yt-frame so the iframe slots back in next to
+  // the placeholder and overlay (NOT directly in .yt-wrap, which now hosts
+  // the picker chip outside the clipped region).
   const slot = $('yt');
   if (slot && slot.parentNode) {
     const fresh = document.createElement('div');
     fresh.id = 'yt';
     slot.parentNode.replaceChild(fresh, slot);
-  } else if (elYtWrap) {
-    const fresh = document.createElement('div');
-    fresh.id = 'yt';
-    elYtWrap.prepend(fresh);
+  } else {
+    const frame = document.querySelector('.yt-frame');
+    if (frame) {
+      const fresh = document.createElement('div');
+      fresh.id = 'yt';
+      frame.prepend(fresh);
+    }
   }
 }
 
