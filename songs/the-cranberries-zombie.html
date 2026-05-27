@@ -1506,10 +1506,12 @@ function onYtStateChange(ev) {
     // clock — force a resync on the next drift check.
     LAST_YT_DRIFT_CHECK_WALL = 0;
   } else if (ev.data === 0) {
-    // YT video reached its end. If drums are still playing they'll keep
-    // going until the rAF end-of-playback check fires; trigger Stop now
-    // so the UI snaps cleanly back.
-    if (IS_PLAYING) onStop();
+    // YT reached its end. If a session is active in ANY form — PLAYING
+    // (drums still firing), PRESYNC (preroll ad somehow exceeded the
+    // video, or the user idled too long), or PAUSED with YT advanced
+    // off the end — snap cleanly back to IDLE. The prior IS_PLAYING
+    // check left PRESYNC stuck with a dead iframe.
+    if (playerState() !== STATE.IDLE) onStop();
   }
 }
 
@@ -1707,10 +1709,12 @@ async function onYtPick(ev) {
 }
 
 function setMode(newMode) {
-  // Mid-playback mode switch: cleanest UX is to stop everything and let the
-  // student re-press Play. The drum schedule and YT timeline both restart
-  // from scratch in the new mode.
-  if (IS_PLAYING) onStop();
+  // Mid-session mode switch always force-stops first — matches the
+  // picker's behaviour (onYtPick), and avoids the orphan-half-state
+  // bugs caused by switching out of PRESYNC or sampled-PAUSED while
+  // the session is still nominally active. "Active session" is any
+  // state with Stop enabled, not just IS_PLAYING.
+  if (playerState() !== STATE.IDLE) onStop();
   if (newMode === CURRENT_MODE) return;
   CURRENT_MODE = newMode;
 
