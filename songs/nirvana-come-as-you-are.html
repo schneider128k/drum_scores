@@ -171,55 +171,7 @@
       transition: width 0.05s linear;
     }
 
-    /* ── Mode row (only shown when a YouTube video is attached) ───────── */
-    .mix-row {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #2a2e38;
-    }
-    .mix-row[hidden] { display: none; }
-    .mode-radio {
-      border: 0;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      gap: 10px;
-    }
-    .mode-radio label {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-      cursor: pointer;
-    }
-    .mode-radio input[type="radio"] {
-      accent-color: var(--accent);
-      cursor: pointer;
-    }
-    .mix-row .yt-pick-wrap {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-      margin-left: auto;
-    }
-    .mix-row .yt-pick-wrap[hidden] { display: none; }
-    .mix-row select {
-      background: #2a2e38;
-      color: var(--fg);
-      border: 1px solid #3a3f4d;
-      border-radius: 4px;
-      padding: 3px 6px;
-      font-family: ui-monospace, "SF Mono", Consolas, monospace;
-      font-size: 11px;
-      cursor: pointer;
-    }
-
-    /* ── YouTube video panel (200×112 thumbnail, 16:9) ────────────────── */
+    /* ── Audio source panel (200×112, 16:9) ──────────────────────────── */
     .yt-wrap {
       position: relative;
       width: 200px;
@@ -264,6 +216,82 @@
     }
     .yt-overlay:hover { background: rgba(0,0,0,0.45); }
     .yt-overlay[hidden] { display: none; }
+
+    /* Placeholder shown in the audio-source slot when Drums-only is
+       picked (iframe destroyed). Keeps the picker button's backdrop. */
+    .yt-placeholder {
+      position: absolute;
+      inset: 0;
+      background: #1a1a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+    .yt-placeholder[hidden] { display: none; }
+    .yt-placeholder-icon { font-size: 28px; line-height: 1; }
+
+    /* Source picker — single tappable affordance in the slot's top-right.
+       Replaces the old mode radios + video dropdown. */
+    .src-picker-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 3;            /* above .yt-overlay (z-index: 2) */
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .src-picker-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.78); }
+    .src-picker-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .src-picker-menu {
+      position: absolute;
+      top: 42px;
+      right: 6px;
+      z-index: 4;
+      background: var(--panel);
+      border: 1px solid #3a3f4d;
+      border-radius: 6px;
+      min-width: 140px;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    }
+    .src-picker-menu[hidden] { display: none; }
+    .src-picker-row {
+      background: transparent;
+      color: var(--fg);
+      border: 0;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .src-picker-row:hover:not(:disabled) { background: #2a2e38; }
+    .src-picker-row.is-selected {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .src-picker-row.is-selected::before {
+      content: '\2713\00a0';   /* ✓ + nbsp */
+    }
 
     /* ── Sheet music panel (light "paper") ────────────────────────────── */
     .sheet {
@@ -394,27 +422,23 @@
         <div class="progress-fill" id="progress"></div>
       </div>
 
-      <!-- Mode + YT video picker. Hidden by default; player.js reveals
-           when SCHEDULE.youtube_id is set. -->
-      <div class="mix-row" id="mode-row" hidden>
-        <fieldset class="mode-radio">
-          <label><input type="radio" name="mode" value="play_along" id="mode-play-along">Play along</label>
-          <label><input type="radio" name="mode" value="sampled_drums" id="mode-sampled-drums">Sampled</label>
-          <label><input type="radio" name="mode" value="compare" id="mode-compare">Both</label>
-        </fieldset>
-        <span class="yt-pick-wrap" id="yt-pick-wrap" hidden>
-          <select id="yt-pick" aria-label="Video"></select>
-        </span>
-      </div>
     </div>
 
-    <!-- YouTube embed. Hidden until player.js creates a YT.Player here.
-         The yt-overlay is a transparent click-gate; player.js hides it
-         after the first Play press and re-shows it on Stop. -->
+    <!-- Audio-source slot. In Song/Backing it hosts the iframe; in Drums
+         it shows the placeholder. The picker button (top-right) is the
+         single audio-source affordance — replaces the old mode radios
+         and video dropdown. Hidden when the schedule has no YT video. -->
     <div class="yt-wrap" id="yt-wrap" hidden>
       <div id="yt"></div>
+      <div id="yt-placeholder" class="yt-placeholder" hidden>
+        <span class="yt-placeholder-icon" aria-hidden="true">&#x1F941;</span>
+        <span class="yt-placeholder-label">Drums only</span>
+      </div>
       <div id="yt-overlay" class="yt-overlay"
            role="button" tabindex="0" aria-label="Start playback">▶ Tap Play above</div>
+      <button id="src-picker-btn" class="src-picker-btn" type="button"
+              aria-haspopup="menu" aria-label="Audio source">&#x22EF;</button>
+      <div id="src-picker-menu" class="src-picker-menu" role="menu" hidden></div>
     </div>
 
     <!-- Sheet music (light) — one page at a time. -->
@@ -459,16 +483,10 @@ let SCHEDULE = null;          // the dict returned by /api/score
 let PLAYERS = null;           // Tone.Players instance built during init()
 let MASTER_VOL = null;        // Tone.Volume between PLAYERS and destination
 
-// Drum master gain in dB by mode. SAMPLED_DRUMS uses -6 dB for headroom
-// against 9-voice peaks (kick + snare + hats + crashes can stack). In
-// COMPARE the drums fight YouTube's mastered-loud backing, so boost
-// them so the student can actually hear what they're meant to play.
-// PLAY_ALONG mutes via .mute, so the dB value is moot there.
-const DRUM_DB_BY_MODE = {
-  play_along:    -6,
-  sampled_drums: -6,
-  compare:        2,
-};
+// Drum master gain in dB. Drums are only audible in DRUMS source (no YT
+// alongside to fight); -6 dB gives headroom against 9-voice peaks (kick +
+// snare + hats + crashes can stack).
+const DRUMS_DB = -6;
 let SAMPLES_LOADED = false;   // true once Tone.Players has fetched every buffer
 let SCHEDULED = false;        // have we already pushed events to Transport?
 let RAF_ID = null;            // animation frame handle for UI loop
@@ -542,12 +560,9 @@ const TEMPO_MIN = 0.05;
 const TEMPO_MAX = 1.0;
 const TEMPO_STEP = 0.05;
 
-// Tempo grids by mode. In YT modes (PLAY_ALONG, COMPARE) the drum cursor
-// and YT must share a rate, and YT only supports 0.25/0.5/0.75/1.0 inside
-// our slow-down window. Mixing rates (e.g. drums 0.85, YT 0.75) creates
-// continuous drift, which forces the drift-correction loop to seekTo()
-// every ~500ms — that's the "iframe reloading" Pawel observed at 85%.
-// In SAMPLED_DRUMS mode there's no YT to match, so full 5% granularity.
+// Tempo grids by source. In YT sources (Song, Backing) the cursor slaves
+// to YT, and YT only supports 0.25/0.5/0.75/1.0 inside our slow-down
+// window. In DRUMS source there's no YT, so full 5% granularity.
 const TEMPO_GRID_FINE = (() => {
   const g = [];
   for (let f = TEMPO_MIN; f <= TEMPO_MAX + 1e-9; f += TEMPO_STEP) {
@@ -563,28 +578,33 @@ function activeTempoGrid() {
 
 const GRACE_V8_OFFSET_SECONDS = 0.030;  // play v8 acciaccaturas 30ms early
 
-// ── Mode (Milestone 6g+ v48) ─────────────────────────────────────────────────
-// Three playback modes that map 1:1 to the three real use cases:
-//   PLAY_ALONG    — student at the kit plays along to the band-minus-drums
-//                   YT backing track. (Music-school default when YT attached.)
-//   SAMPLED_DRUMS — no kit available; engine renders the tab via samples.
-//                   YT iframe is not loaded.
-//   COMPARE       — both YT and sampled drums audible. Verifies the tab.
-// When SCHEDULE.youtube_id is null the radio doesn't render and behaviour is
-// effectively SAMPLED_DRUMS.
-const MODE = Object.freeze({
-  PLAY_ALONG: 'play_along',
-  SAMPLED_DRUMS: 'sampled_drums',
-  COMPARE: 'compare',
+// ── Audio source ─────────────────────────────────────────────────────────────
+// Single dimension covering both the old "mode" and the YT video pick.
+// Drums and YT never coexist — that's what makes the sync question moot.
+//   SONG    — YT full mix, drums muted. Default when YT is available.
+//   BACKING — YT backing track, drums muted. Shown only when a backing
+//             candidate exists for this song's drums part.
+//   DRUMS   — sampled drums, YT iframe destroyed (not just muted — see
+//             ios-audiocontext-suspend gotcha).
+// When SCHEDULE.youtube_id is null the picker doesn't render and behaviour
+// is effectively DRUMS.
+const SOURCE = Object.freeze({
+  SONG: 'song',
+  BACKING: 'backing',
+  DRUMS: 'drums',
 });
-let CURRENT_MODE = MODE.SAMPLED_DRUMS;  // set definitively in init()
+let CURRENT_SOURCE = SOURCE.DRUMS;  // set definitively in init()
 
-// Predicates derived from CURRENT_MODE — single source of truth for the
+// Predicates derived from CURRENT_SOURCE — single source of truth for the
 // scattered checks that used to be "if (SCHEDULE.youtube_id)" or per-
 // checkbox-checked reads.
-function ytNeeded()     { return CURRENT_MODE !== MODE.SAMPLED_DRUMS; }
-function drumsAudible() { return CURRENT_MODE !== MODE.PLAY_ALONG; }
-function ytAudible()    { return CURRENT_MODE !== MODE.SAMPLED_DRUMS; }
+function ytNeeded()     { return CURRENT_SOURCE !== SOURCE.DRUMS; }
+function drumsAudible() { return CURRENT_SOURCE === SOURCE.DRUMS; }
+function ytAudible()    { return CURRENT_SOURCE !== SOURCE.DRUMS; }
+
+// localStorage key — per-pathname so each deployed song remembers its own
+// last-used source. Falls back gracefully if storage is denied.
+const STORAGE_KEY_SOURCE = `songsterr.source:${location.pathname}`;
 
 // ── DOM handles ──────────────────────────────────────────────────────────────
 
@@ -605,9 +625,9 @@ const elBtnTempoUp = $('btn-tempo-up');
 const elTempoValue = $('tempo-value');
 const elYtWrap = $('yt-wrap');
 const elYtOverlay = $('yt-overlay');
-const elModeRow = $('mode-row');
-const elYtPickWrap = $('yt-pick-wrap');
-const elYtPick = $('yt-pick');
+const elYtPlaceholder = $('yt-placeholder');
+const elSrcPickerBtn = $('src-picker-btn');
+const elSrcPickerMenu = $('src-picker-menu');
 const elPager = $('pager');
 const elPagerLabel = $('pager-label');
 const elBtnPagePrev = $('btn-page-prev');
@@ -664,29 +684,29 @@ async function init() {
   window.addEventListener('keydown', onKeyDown);
   updateTempoUi();
 
-  // YouTube sync (M6g+): only show the mode row + YT machinery when the
-  // schedule names a video. Initial mode is PLAY_ALONG; the student can
-  // switch via the radios. The YT IFrame API loads asynchronously;
-  // window.YT may not be defined yet, so initYouTube() registers a
-  // callback (or calls directly if it's already loaded).
+  // Audio source picker: only render when the schedule names a video AND
+  // we have at least one YT candidate. Last-used source is restored from
+  // localStorage; defaults to Song when full mix exists.
   if (SCHEDULE.youtube_id) {
-    // Default to Full mix when available — must run BEFORE initYouTube()
-    // so the iframe loads the right video on first onReady. No-op for
-    // schedules already baked with Full mix as the chosen candidate.
-    pickDefaultVideo();
-    CURRENT_MODE = MODE.PLAY_ALONG;
-    elModeRow.hidden = false;
+    CURRENT_SOURCE = defaultSource();
+    const initialCand = candidateForSource(CURRENT_SOURCE);
+    if (initialCand) applyCandidateToSchedule(initialCand);
     elYtWrap.hidden = false;
-    document.getElementById(`mode-${CURRENT_MODE.replace('_', '-')}`).checked = true;
-    for (const r of document.querySelectorAll('input[name="mode"]')) {
-      r.addEventListener('change', (ev) => setMode(ev.target.value));
+    buildSourceMenu();
+    if (elSrcPickerBtn) {
+      elSrcPickerBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        toggleSourceMenu();
+      });
     }
-    populateYtPicker();
-    initYouTube();
+    refreshSourcePickerUi();
+    // Only spin up the YT IFrame when the initial source actually needs it.
+    // If the user last chose DRUMS, no iframe loads on this visit.
+    if (CURRENT_SOURCE !== SOURCE.DRUMS) initYouTube();
   }
   refreshYtOverlay();
-  // else: CURRENT_MODE stays SAMPLED_DRUMS, mode-row stays hidden, the page
-  // behaves identically to a pre-6g player (drums only).
+  // else: CURRENT_SOURCE stays DRUMS, picker stays hidden, the page behaves
+  // identically to a pre-6g player (drums only).
 
   // Kick off sample loading immediately. buildPlayers() arms an onload
   // callback that enables the transport. While loading, the play button
@@ -938,12 +958,10 @@ function buildPlayers() {
   // reliably fire if any buffer is cached or completes synchronously).
   // Tone.loaded() returns a Promise that resolves when *every* tracked
   // ToneAudioBuffer is decoded — works regardless of cache state.
-  MASTER_VOL = new Tone.Volume(DRUM_DB_BY_MODE[CURRENT_MODE] ?? -6)
-                  .toDestination();
-  // CURRENT_MODE is the source of truth. In PLAY_ALONG mode the band's
-  // recording carries the song's audio and the student plays a physical
-  // kit, so the sampled drums must be silent. SAMPLED_DRUMS and COMPARE
-  // both want drums audible.
+  MASTER_VOL = new Tone.Volume(DRUMS_DB).toDestination();
+  // Drums are only audible in the DRUMS source. In Song/Backing the YT
+  // recording carries the audio and a physical kit (or just listening)
+  // covers the drums — sampled drums stay muted.
   MASTER_VOL.mute = !drumsAudible();
   const masterVol = MASTER_VOL;
   const urls = {
@@ -1106,7 +1124,7 @@ function refreshPlayPauseLabel() {
       return;
     case STATE.PRESYNC:
       elBtnPlayPause.textContent = '▶ Sync';
-      elBtnPlayPause.setAttribute('aria-label', 'Sync drums to YouTube');
+      elBtnPlayPause.setAttribute('aria-label', 'Sync cursor to song');
       elBtnPlayPause.title = 'Sync — tap when the song begins';
       return;
     case STATE.PAUSED:
@@ -1253,10 +1271,10 @@ function onStop({ cueYt = true } = {}) {
 
 function applySettingsLock() {
   // Single switch that disables every settings control while music is
-  // playing. Picker, mode radio, and speed buttons all flip in lockstep.
+  // playing. Source picker and speed buttons flip in lockstep.
   const dis = SETTINGS_LOCKED;
-  if (elYtPick) elYtPick.disabled = dis;
-  document.querySelectorAll('input[name="mode"]').forEach(r => { r.disabled = dis; });
+  if (elSrcPickerBtn) elSrcPickerBtn.disabled = dis;
+  if (dis) hideSourceMenu();
   // Speed buttons: when unlocked, updateTempoUi computes proper bounds
   // (min/max of active grid). When locked, force both disabled regardless.
   if (dis) {
@@ -1488,9 +1506,8 @@ function onYtReady() {
       videoId: SCHEDULE.youtube_id,
       startSeconds: SCHEDULE.youtube_offset || 0,
     });
-    // Match initial mode's audibility — PLAY_ALONG and COMPARE want sound,
-    // SAMPLED_DRUMS (a mid-session mode switch into a YT mode) wants silent
-    // until the user explicitly switches.
+    // YT modes always want the recording audible; DRUMS never reaches
+    // here because we destroy the iframe before switching to it.
     ytAudible() ? YT_PLAYER.unMute() : YT_PLAYER.mute();
   } catch (_) { /* tolerate early-state errors */ }
   maybeEnablePlay();
@@ -1518,29 +1535,60 @@ function onYtStateChange(ev) {
 function refreshYtOverlay() {
   // Single source of truth for the YT click-gate's visibility. Shown iff
   // we're in a YT mode AND no session is yet committed (Stop button
-  // disabled is the canonical "no session" signal). In SAMPLED_DRUMS the
-  // overlay would just sit over a muted thumbnail — pointless, so hide.
+  // disabled is the canonical "no session" signal). In DRUMS source the
+  // iframe is destroyed entirely, so the overlay has nothing to gate.
   if (!elYtOverlay) return;
   elYtOverlay.hidden = !ytNeeded() || !elBtnStop.disabled;
 }
 
-function pickDefaultVideo() {
-  // Override SCHEDULE.youtube_id with the Full mix candidate when present.
-  // The pipeline now picks Full mix as the baked default, but legacy data
-  // (or future re-fetches) may still arrive with a backing track. Music-
-  // school students want to hear the actual song with vocals; the picker
-  // exposes the backing track as a secondary option.
+// ── Source → YT candidate resolution ─────────────────────────────────────────
+//
+// Candidate selection rules match Songsterr's UI (verified via HARs):
+//   - Full mix       = first feature == null (fallback: "alternative")
+//   - Backing track  = first feature == "backing" whose `tracks` includes
+//                      SCHEDULE.part_id (drums). Fallback to first
+//                      feature:backing for caches predating the tracks field.
+
+function fullMixCandidate() {
   const cands = SCHEDULE.youtube_candidates || [];
-  const fullMix = cands.find(c => c && c.feature === null)
-              || cands.find(c => c && c.feature === 'alternative');
-  if (!fullMix) return;
-  if (SCHEDULE.youtube_id === fullMix.video_id) return;
-  SCHEDULE.youtube_id = fullMix.video_id;
-  if (typeof fullMix.offset === 'number') {
-    SCHEDULE.youtube_offset = fullMix.offset;
+  return cands.find(c => c && c.feature === null)
+      || cands.find(c => c && c.feature === 'alternative')
+      || null;
+}
+
+function backingCandidate() {
+  const cands = SCHEDULE.youtube_candidates || [];
+  const partId = SCHEDULE.part_id;
+  const isBacking = c => c && c.feature === 'backing';
+  const matchesPart = c => c && Array.isArray(c.tracks) && c.tracks.includes(partId);
+  return cands.find(c => isBacking(c) && matchesPart(c))
+      || cands.find(isBacking)
+      || null;
+}
+
+function candidateForSource(src) {
+  if (src === SOURCE.SONG) return fullMixCandidate();
+  if (src === SOURCE.BACKING) return backingCandidate();
+  return null;  // DRUMS has no YT candidate
+}
+
+function isSourceAvailable(src) {
+  if (src === SOURCE.DRUMS) return true;
+  return candidateForSource(src) !== null;
+}
+
+function applyCandidateToSchedule(cand) {
+  // Swap SCHEDULE.youtube_id + offset + per-measure anchors to the chosen
+  // candidate. Each candidate has its own recording timing, so the
+  // schedule has to be recomputed for the cursor to land on the right
+  // beat of the new recording (not just the right starting offset).
+  if (!cand) return;
+  SCHEDULE.youtube_id = cand.video_id;
+  if (typeof cand.offset === 'number') {
+    SCHEDULE.youtube_offset = cand.offset;
   }
-  if (Array.isArray(fullMix.points)) {
-    applyPointsToSchedule(fullMix.points, SCHEDULE.youtube_offset);
+  if (Array.isArray(cand.points)) {
+    applyPointsToSchedule(cand.points, SCHEDULE.youtube_offset);
   }
 }
 
@@ -1614,159 +1662,160 @@ function applyPointsToSchedule(points, offset) {
   return true;
 }
 
-function populateYtPicker() {
-  // Show only the two slots a student actually wants: Full mix and
-  // Backing track. The "other candidates" optgroup was a developer
-  // escape hatch (e.g. Wave of Mutilation's Fh8zVOpvHDk override) —
-  // not useful in a music-school deployment, where curation should be
-  // fixed at the data layer if it's wrong.
-  //
-  // Selection rules match Songsterr's UI (verified via HARs):
-  //   - Full mix      = first feature == null (fallback: "alternative")
-  //   - Backing track = first feature == "backing" whose `tracks` includes
-  //                     SCHEDULE.part_id (drums). Fallback to first
-  //                     feature:backing for caches predating the tracks
-  //                     field.
-  // We only render the picker when there are ≥2 actual slots to choose
-  // between; a single option is no choice at all.
-  const candidates = SCHEDULE.youtube_candidates || [];
-  if (!elYtPick || candidates.length < 1) return;
+// ── Source persistence ───────────────────────────────────────────────────────
 
-  const partId   = SCHEDULE.part_id;
-  const isBacking = c => c && c.feature === 'backing';
-  const matchesPart = c => c && Array.isArray(c.tracks) && c.tracks.includes(partId);
-
-  const backing = candidates.find(c => isBacking(c) && matchesPart(c))
-               || candidates.find(isBacking);
-  const fullMix = candidates.find(c => c && c.feature === null)
-               || candidates.find(c => c && c.feature === 'alternative');
-
-  const slots = [];
-  if (fullMix) slots.push({ cand: fullMix, label: 'Full mix' });
-  if (backing) slots.push({ cand: backing, label: 'Backing track' });
-  if (slots.length < 2) return;  // nothing to choose between
-
-  const currentId = SCHEDULE.youtube_id;
-  const mkOpt = ({ cand, label }) => {
-    const opt = document.createElement('option');
-    opt.value = cand.video_id;
-    opt.textContent = label;
-    if (cand.video_id === currentId) opt.selected = true;
-    return opt;
-  };
-
-  elYtPick.innerHTML = '';
-  for (const slot of slots) elYtPick.appendChild(mkOpt(slot));
-
-  elYtPickWrap.hidden = false;
-  elYtPick.addEventListener('change', onYtPick);
+function loadSourceChoice() {
+  try { return localStorage.getItem(STORAGE_KEY_SOURCE); } catch (_) { return null; }
+}
+function saveSourceChoice() {
+  try { localStorage.setItem(STORAGE_KEY_SOURCE, CURRENT_SOURCE); } catch (_) {}
 }
 
-async function onYtPick(ev) {
-  const newId = ev.target.value;
-  if (!newId || newId === SCHEDULE.youtube_id) return;
+function defaultSource() {
+  // Restore last-used source if still available for this song. Otherwise
+  // default to Song when a full mix exists; fall back to Drums.
+  const saved = loadSourceChoice();
+  if (saved && isSourceAvailable(saved)) return saved;
+  if (fullMixCandidate()) return SOURCE.SONG;
+  return SOURCE.DRUMS;
+}
 
-  // Any swap mid-playback is messy: cleanest UX is to stop everything and
-  // let the user hit Play YT → wait for ad → Start music again with the
-  // new video. Pass cueYt:false because we cue the NEW video below;
-  // letting onStop cue the OLD one too causes a race inside the iframe
-  // where the new cue gets dropped and YT keeps showing the old video.
+// ── Source picker UI ─────────────────────────────────────────────────────────
+
+const SOURCE_ROWS = [
+  { src: SOURCE.SONG,    label: 'Song' },
+  { src: SOURCE.BACKING, label: 'Backing' },
+  { src: SOURCE.DRUMS,   label: 'Drums only' },
+];
+
+function buildSourceMenu() {
+  if (!elSrcPickerMenu) return;
+  elSrcPickerMenu.innerHTML = '';
+  for (const r of SOURCE_ROWS) {
+    if (!isSourceAvailable(r.src)) continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.source = r.src;
+    btn.className = 'src-picker-row';
+    btn.textContent = r.label;
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setSource(r.src);
+      hideSourceMenu();
+    });
+    elSrcPickerMenu.appendChild(btn);
+  }
+}
+
+function refreshSourcePickerUi() {
+  // Mark the current row as selected.
+  if (elSrcPickerMenu) {
+    for (const btn of elSrcPickerMenu.querySelectorAll('[data-source]')) {
+      btn.classList.toggle('is-selected', btn.dataset.source === CURRENT_SOURCE);
+    }
+  }
+  // In DRUMS the iframe slot is hidden (it's been destroyed); show the
+  // placeholder in its stead so the picker button still has a backdrop.
+  const ytSlot = $('yt');
+  if (CURRENT_SOURCE === SOURCE.DRUMS) {
+    if (ytSlot) ytSlot.style.display = 'none';
+    if (elYtPlaceholder) elYtPlaceholder.hidden = false;
+  } else {
+    if (ytSlot) ytSlot.style.display = '';
+    if (elYtPlaceholder) elYtPlaceholder.hidden = true;
+  }
+}
+
+function toggleSourceMenu() {
+  if (!elSrcPickerMenu) return;
+  if (elSrcPickerMenu.hidden) showSourceMenu();
+  else hideSourceMenu();
+}
+function showSourceMenu() {
+  if (!elSrcPickerMenu || SETTINGS_LOCKED) return;
+  elSrcPickerMenu.hidden = false;
+  // Defer the listener install one tick so the click that opened us
+  // doesn't immediately close us.
+  setTimeout(() => document.addEventListener('click', onOutsideClickSrcMenu), 0);
+}
+function hideSourceMenu() {
+  if (!elSrcPickerMenu) return;
+  elSrcPickerMenu.hidden = true;
+  document.removeEventListener('click', onOutsideClickSrcMenu);
+}
+function onOutsideClickSrcMenu(ev) {
+  if (!elSrcPickerMenu.contains(ev.target) && ev.target !== elSrcPickerBtn) {
+    hideSourceMenu();
+  }
+}
+
+// ── Source transitions ───────────────────────────────────────────────────────
+
+function destroyYouTube() {
+  // Tear down the YT IFrame entirely. Sidesteps the iOS AudioContext-
+  // suspend gotcha — no silent iframe means no silent AudioContext to be
+  // suspended for power-saving. The placeholder div takes over the slot's
+  // visual space so the picker button keeps its backdrop.
+  if (YT_PLAYER) {
+    try { YT_PLAYER.destroy(); } catch (_) { /* tolerate transient state */ }
+    YT_PLAYER = null;
+  }
+  YT_READY = false;
+  YT_BUFFERING = false;
+  // YT.Player.destroy() removes the iframe but not always the wrapper
+  // element it created — recreate a fresh <div id="yt"> so the next
+  // initYouTube() / new YT.Player('yt', ...) has a target to attach to.
+  const slot = $('yt');
+  if (slot && slot.parentNode) {
+    const fresh = document.createElement('div');
+    fresh.id = 'yt';
+    slot.parentNode.replaceChild(fresh, slot);
+  } else if (elYtWrap) {
+    const fresh = document.createElement('div');
+    fresh.id = 'yt';
+    elYtWrap.prepend(fresh);
+  }
+}
+
+function setSource(newSource) {
+  // Mid-session source switch always force-stops first — avoids orphan
+  // half-states when switching out of PRESYNC or PAUSED. cueYt:false
+  // because we're about to re-cue (or destroy) the iframe ourselves below.
+  if (!isSourceAvailable(newSource)) return;
+  if (newSource === CURRENT_SOURCE) return;
   if (playerState() !== STATE.IDLE) onStop({ cueYt: false });
 
-  // Each video has its own sync offset AND its own per-measure anchors
-  // (Songsterr's /api/video-points points[]). Update the schedule from
-  // the new candidate so cursor + drums match the new recording's groove,
-  // not just its starting point.
-  const chosen = (SCHEDULE.youtube_candidates || [])
-    .find(c => c.video_id === newId);
-  if (chosen && typeof chosen.offset === 'number') {
-    SCHEDULE.youtube_offset = chosen.offset;
-  }
-  if (chosen && Array.isArray(chosen.points)) {
-    applyPointsToSchedule(chosen.points, SCHEDULE.youtube_offset);
-  }
+  CURRENT_SOURCE = newSource;
+  saveSourceChoice();
 
-  if (YT_PLAYER && YT_READY) {
-    try {
-      YT_PLAYER.cueVideoById({
-        videoId: newId,
-        startSeconds: SCHEDULE.youtube_offset || 0,
-      });
-    } catch (_) { /* iframe not ready, harmless */ }
-  }
+  if (MASTER_VOL) MASTER_VOL.mute = !drumsAudible();
 
-  SCHEDULE.youtube_id = newId;
-
-  // Persist server-side; in static-deploy mode there's no backend, so a
-  // 404/CORS failure here is expected. The in-session swap still works.
-  try {
-    await fetch('/api/youtube-choice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ video_id: newId }),
-    });
-  } catch (_) { /* static-site mode, no backend */ }
-}
-
-function setMode(newMode) {
-  // Mid-session mode switch always force-stops first — matches the
-  // picker's behaviour (onYtPick), and avoids the orphan-half-state
-  // bugs caused by switching out of PRESYNC or sampled-PAUSED while
-  // the session is still nominally active. "Active session" is any
-  // state with Stop enabled, not just IS_PLAYING.
-  if (playerState() !== STATE.IDLE) onStop();
-  if (newMode === CURRENT_MODE) return;
-  CURRENT_MODE = newMode;
-
-  // Drum-output mute + gain both depend on mode. Compare-mode boost
-  // (+2 dB) is what lets drums cut through the YT mix without manual
-  // volume tweaking.
-  if (MASTER_VOL) {
-    MASTER_VOL.mute = !drumsAudible();
-    MASTER_VOL.volume.value = DRUM_DB_BY_MODE[CURRENT_MODE] ?? -6;
-  }
-
-  // YT iframe: if we now need it but it was never created (entered the
-  // page as SAMPLED_DRUMS without a youtube_id, then switched into a
-  // YT mode — can't happen today since the radio is hidden in that case,
-  // but the guard is harmless), create it. Otherwise just mute/unmute.
-  if (ytNeeded()) {
+  if (newSource === SOURCE.DRUMS) {
+    destroyYouTube();
+  } else {
+    // YT source — point the schedule at the chosen candidate, then either
+    // cue YT (if iframe still alive from a prior YT source) or recreate
+    // the iframe (if we're returning from DRUMS).
+    applyCandidateToSchedule(candidateForSource(newSource));
     if (!YT_PLAYER) {
-      elYtWrap.hidden = false;
       initYouTube();
     } else if (YT_READY) {
-      try { ytAudible() ? YT_PLAYER.unMute() : YT_PLAYER.mute(); }
-      catch (_) { /* iframe transient state, harmless */ }
+      try {
+        YT_PLAYER.cueVideoById({
+          videoId: SCHEDULE.youtube_id,
+          startSeconds: SCHEDULE.youtube_offset || 0,
+        });
+        YT_PLAYER.unMute();
+      } catch (_) { /* iframe transient state, harmless */ }
     }
-  } else if (YT_PLAYER && YT_READY) {
-    // Leaving a YT mode: mute only. Don't tear down the iframe — keeping
-    // it loaded means the next switch is instant. Don't pause/seek either:
-    //
-    //   1. setMode now force-calls onStop on any active session, which
-    //      cueVideoById's YT back to offset. Re-cueing here is redundant.
-    //   2. seekTo() on a CUED player STARTS PLAYBACK per the YT IFrame
-    //      API spec ("If the function is called from another state —
-    //      playing, video cued, etc. — the player will play the video.").
-    //      Manifested as YT silently scrubbing forward in the iframe
-    //      after the user clicked Sampled following a Stop.
-    try { YT_PLAYER.mute(); }
-    catch (_) { /* iframe transient state, harmless */ }
   }
 
-  // Picker is only meaningful when YT is in play AND there's a real
-  // choice. Count actual options on the select — populateYtPicker only
-  // adds the Full mix / Backing track slots, so this stays consistent
-  // with the filtered picker even if more raw candidates exist.
-  if (elYtPickWrap) {
-    const choices = elYtPick ? elYtPick.options.length : 0;
-    elYtPickWrap.hidden = !(ytNeeded() && choices > 1);
-  }
-
-  // Mode change can flip the tempo grid (fine 5% ↔ YT-locked 25%). Re-snap
-  // current tempo so the displayed value is always on the active grid —
-  // e.g. 85% in sampled mode → 75% when switching to Play along.
+  // Source change can flip the tempo grid (fine 5% ↔ YT-locked 25%).
+  // Re-snap current tempo so the displayed value is always on the
+  // active grid — e.g. 85% in Drums → 75% when switching to Song.
   setTempoFactor(TEMPO_FACTOR);
 
+  refreshSourcePickerUi();
   refreshYtOverlay();
   maybeEnablePlay();
 }
