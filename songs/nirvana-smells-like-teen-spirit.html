@@ -34,6 +34,21 @@
       gap: 12px;
     }
 
+    /* Top row puts the control panel (left) and the audio-source slot
+       (right) side-by-side, so the slot doesn't burn vertical real estate
+       the score needs. Stacks on narrow screens. */
+    .top-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .top-row .panel { flex: 1 1 auto; min-width: 0; }
+    .top-row .yt-wrap { flex: 0 0 320px; }
+    @media (max-width: 700px) {
+      .top-row { flex-direction: column; align-items: stretch; }
+      .top-row .yt-wrap { flex: 0 0 auto; margin: 0 auto; }
+    }
+
     /* ── Control panel (dark, compact) ─────────────────────────────────── */
     .panel {
       background: var(--panel);
@@ -171,32 +186,24 @@
       transition: width 0.05s linear;
     }
 
-    /* ── Audio source panel (320×180, 16:9) ──────────────────────────── */
-    /* Outer .yt-wrap is the positioning context for the picker chip and
-       its dropdown menu — NO overflow:hidden, so the menu can extend below
-       the frame without being clipped. The inner .yt-frame owns the visual
-       region (iframe / placeholder / overlay) and its own overflow:hidden
-       for the rounded corners. */
+    /* ── Audio-source slot (320×180, 16:9) ────────────────────────────── */
+    /* The slot now holds just the YT iframe + click-gate overlay. The
+       picker chip lives in the controls panel instead, so the slot is
+       free of overlapping UI — the video plays clean. Hidden entirely
+       in Drums source (no iframe → no slot needed). */
     .yt-wrap {
       position: relative;
       width: 320px;
       max-width: 100%;
       aspect-ratio: 16 / 9;
-      margin: 0 auto;
-    }
-    .yt-wrap[hidden] { display: none; }
-
-    .yt-frame {
-      position: relative;
-      width: 100%;
-      height: 100%;
       background: #000;
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
     }
-    .yt-frame iframe,
-    .yt-frame #yt {
+    .yt-wrap[hidden] { display: none; }
+    .yt-wrap iframe,
+    .yt-wrap #yt {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -229,55 +236,40 @@
     .yt-overlay:hover { background: rgba(0,0,0,0.45); }
     .yt-overlay[hidden] { display: none; }
 
-    /* Placeholder shown in the audio-source slot when Drums-only is
-       picked (iframe destroyed). Keeps the picker chip's backdrop. */
-    .yt-placeholder {
-      position: absolute;
-      inset: 0;
-      background: #1a1a1a;
-      display: flex;
-      flex-direction: column;
+    /* Source picker chip — sits in the controls panel next to the
+       transport buttons. Labeled with the current source so it doubles
+       as a status display. 44pt height matches the transport buttons. */
+    .src-picker-wrap {
+      position: relative;
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      gap: 6px;
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.02em;
     }
-    .yt-placeholder[hidden] { display: none; }
-    .yt-placeholder-icon { font-size: 38px; line-height: 1; }
-
-    /* Source picker — labeled chip in the slot's top-right showing the
-       current source. Tap → menu drops below. 44pt height per iOS HIG. */
+    .src-picker-wrap[hidden] { display: none; }
     .src-picker-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      z-index: 3;                          /* above .yt-overlay (z-index: 2) */
       height: 44px;
       padding: 0 14px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      background: rgba(0, 0, 0, 0.62);
-      color: #fff;
-      border: 0;
-      border-radius: 8px;
+      background: #2a2e38;
+      color: var(--fg);
+      border: 1px solid #3a3f4d;
+      border-radius: 6px;
       font-family: inherit;
       font-size: 13px;
       font-weight: 500;
       line-height: 1;
       cursor: pointer;
     }
-    .src-picker-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.82); }
+    .src-picker-btn:hover:not(:disabled) { background: #353a45; border-color: #4a4f5d; }
     .src-picker-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .src-picker-caret { font-size: 11px; opacity: 0.75; }
+    .src-picker-caret { font-size: 11px; opacity: 0.7; }
 
     .src-picker-menu {
       position: absolute;
-      top: 60px;                           /* 8 (chip top) + 44 (chip h) + 8 (gap) */
-      right: 8px;
-      z-index: 4;
+      top: 50px;                           /* below the 44pt button + 6px gap */
+      left: 0;
+      z-index: 50;
       background: var(--panel);
       border: 1px solid #3a3f4d;
       border-radius: 8px;
@@ -399,68 +391,73 @@
 <body>
   <div class="layout">
 
-    <!-- Controls (dark, compact) -->
-    <div class="panel">
-      <div class="hdr">
-        <span class="hdr-title" id="title">Loading…</span>
-        <span class="hdr-sep" aria-hidden="true">·</span>
-        <span class="hdr-artist" id="artist">&nbsp;</span>
-      </div>
+    <!-- Top row: controls panel on the left, YT slot on the right.
+         Stacks on narrow screens (see .top-row media query). -->
+    <div class="top-row">
 
-      <div class="controls">
-        <!-- Single transport button. Label adapts to state:
-               IDLE     ▶          tap → start (YT preroll or sampled drums)
-               PRESYNC  ▶ Sync     tap → sync cursor to YT now (ad just ended)
-               PLAYING  ⏸          tap → pause
-               PAUSED   ▶          tap → resume (re-sync to YT if YT mode) -->
-        <button id="btn-playpause" class="primary transport" disabled aria-label="Play">▶</button>
-        <button id="btn-stop" class="transport" disabled aria-label="Stop">⏹</button>
-
-        <span class="spacer"></span>
-
-        <div class="tempo-group" aria-label="Practice tempo">
-          <button id="btn-tempo-down" class="speed-btn"
-                  title="Slower (↓)" aria-label="Decrease tempo">−</button>
-          <span class="speed-value" id="tempo-value">100%</span>
-          <button id="btn-tempo-up" class="speed-btn"
-                  title="Faster (↑)" aria-label="Increase tempo">+</button>
+      <!-- Controls (dark, compact) -->
+      <div class="panel">
+        <div class="hdr">
+          <span class="hdr-title" id="title">Loading…</span>
+          <span class="hdr-sep" aria-hidden="true">·</span>
+          <span class="hdr-artist" id="artist">&nbsp;</span>
         </div>
+
+        <div class="controls">
+          <!-- Single transport button. Label adapts to state:
+                 IDLE     ▶          tap → start (YT preroll or sampled drums)
+                 PRESYNC  ▶ Sync     tap → sync cursor to YT now (ad just ended)
+                 PLAYING  ⏸          tap → pause
+                 PAUSED   ▶          tap → resume (re-sync to YT if YT mode) -->
+          <button id="btn-playpause" class="primary transport" disabled aria-label="Play">▶</button>
+          <button id="btn-stop" class="transport" disabled aria-label="Stop">⏹</button>
+
+          <!-- Source picker chip. Sits next to the transport buttons so
+               it reads as "what's being played." Hidden when the song has
+               no YT video (Drums is the only available source). -->
+          <span class="src-picker-wrap" id="src-picker-wrap" hidden>
+            <button id="src-picker-btn" class="src-picker-btn" type="button"
+                    aria-haspopup="menu" aria-label="Audio source">
+              <span id="src-picker-label">Original</span>
+              <span class="src-picker-caret" aria-hidden="true">&#x25BE;</span>
+            </button>
+            <div id="src-picker-menu" class="src-picker-menu" role="menu" hidden></div>
+          </span>
+
+          <span class="spacer"></span>
+
+          <div class="tempo-group" aria-label="Practice tempo">
+            <button id="btn-tempo-down" class="speed-btn"
+                    title="Slower (↓)" aria-label="Decrease tempo">−</button>
+            <span class="speed-value" id="tempo-value">100%</span>
+            <button id="btn-tempo-up" class="speed-btn"
+                    title="Faster (↑)" aria-label="Increase tempo">+</button>
+          </div>
+        </div>
+
+        <div class="meta">
+          <span class="meta-bar" id="status-bar">—</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-marker" id="status-marker">—</span>
+          <span class="meta-sep">·</span>
+          <span class="meta-position" id="status-position">0:00 / 0:00</span>
+        </div>
+
+        <div class="progress">
+          <div class="progress-fill" id="progress"></div>
+        </div>
+
       </div>
 
-      <div class="meta">
-        <span class="meta-bar" id="status-bar">—</span>
-        <span class="meta-sep">·</span>
-        <span class="meta-marker" id="status-marker">—</span>
-        <span class="meta-sep">·</span>
-        <span class="meta-position" id="status-position">0:00 / 0:00</span>
-      </div>
-
-      <div class="progress">
-        <div class="progress-fill" id="progress"></div>
-      </div>
-
-    </div>
-
-    <!-- Audio-source slot. The inner .yt-frame hosts the iframe (Original /
-         Backing) or the placeholder (Drums only); its overflow:hidden gives
-         the rounded corners. The chip + menu sit on the outer .yt-wrap so
-         the menu can extend below the frame without being clipped. -->
-    <div class="yt-wrap" id="yt-wrap" hidden>
-      <div class="yt-frame">
+      <!-- Audio-source slot — YT iframe + click-gate overlay. Hidden when
+           Drums is the current source (iframe destroyed, panel takes the
+           recovered horizontal space). -->
+      <div class="yt-wrap" id="yt-wrap" hidden>
         <div id="yt"></div>
-        <div id="yt-placeholder" class="yt-placeholder" hidden>
-          <span class="yt-placeholder-icon" aria-hidden="true">&#x1F941;</span>
-          <span class="yt-placeholder-label">Drums only</span>
-        </div>
         <div id="yt-overlay" class="yt-overlay"
              role="button" tabindex="0" aria-label="Start playback">▶ Tap Play above</div>
       </div>
-      <button id="src-picker-btn" class="src-picker-btn" type="button"
-              aria-haspopup="menu" aria-label="Audio source">
-        <span id="src-picker-label">Original</span>
-        <span class="src-picker-caret" aria-hidden="true">&#x25BE;</span>
-      </button>
-      <div id="src-picker-menu" class="src-picker-menu" role="menu" hidden></div>
+
     </div>
 
     <!-- Sheet music (light) — one page at a time. -->
@@ -647,7 +644,7 @@ const elBtnTempoUp = $('btn-tempo-up');
 const elTempoValue = $('tempo-value');
 const elYtWrap = $('yt-wrap');
 const elYtOverlay = $('yt-overlay');
-const elYtPlaceholder = $('yt-placeholder');
+const elSrcPickerWrap = $('src-picker-wrap');
 const elSrcPickerBtn = $('src-picker-btn');
 const elSrcPickerMenu = $('src-picker-menu');
 const elPager = $('pager');
@@ -708,12 +705,12 @@ async function init() {
 
   // Audio source picker: only render when the schedule names a video AND
   // we have at least one YT candidate. Last-used source is restored from
-  // localStorage; defaults to Song when full mix exists.
+  // localStorage; defaults to Original (full mix) when available.
   if (SCHEDULE.youtube_id) {
     CURRENT_SOURCE = defaultSource();
     const initialCand = candidateForSource(CURRENT_SOURCE);
     if (initialCand) applyCandidateToSchedule(initialCand);
-    elYtWrap.hidden = false;
+    if (elSrcPickerWrap) elSrcPickerWrap.hidden = false;
     buildSourceMenu();
     if (elSrcPickerBtn) {
       elSrcPickerBtn.addEventListener('click', (ev) => {
@@ -1745,16 +1742,10 @@ function refreshSourcePickerUi() {
       btn.classList.toggle('is-selected', btn.dataset.source === CURRENT_SOURCE);
     }
   }
-  // In DRUMS the iframe slot is hidden (it's been destroyed); show the
-  // placeholder in its stead so the chip still has a backdrop.
-  const ytSlot = $('yt');
-  if (CURRENT_SOURCE === SOURCE.DRUMS) {
-    if (ytSlot) ytSlot.style.display = 'none';
-    if (elYtPlaceholder) elYtPlaceholder.hidden = false;
-  } else {
-    if (ytSlot) ytSlot.style.display = '';
-    if (elYtPlaceholder) elYtPlaceholder.hidden = true;
-  }
+  // Hide the YT slot entirely in DRUMS — the iframe has been destroyed
+  // and the controls panel reclaims the horizontal space. Re-shown when
+  // switching back to Original / Backing.
+  if (elYtWrap) elYtWrap.hidden = (CURRENT_SOURCE === SOURCE.DRUMS);
 }
 
 function toggleSourceMenu() {
@@ -1796,21 +1787,16 @@ function destroyYouTube() {
   // YT.Player.destroy() removes the iframe but not always the wrapper
   // element it created — recreate a fresh <div id="yt"> so the next
   // initYouTube() / new YT.Player('yt', ...) has a target to attach to.
-  // Fresh div lives inside .yt-frame so the iframe slots back in next to
-  // the placeholder and overlay (NOT directly in .yt-wrap, which now hosts
-  // the picker chip outside the clipped region).
+  // Fresh div sits as the first child of .yt-wrap, before the overlay.
   const slot = $('yt');
   if (slot && slot.parentNode) {
     const fresh = document.createElement('div');
     fresh.id = 'yt';
     slot.parentNode.replaceChild(fresh, slot);
-  } else {
-    const frame = document.querySelector('.yt-frame');
-    if (frame) {
-      const fresh = document.createElement('div');
-      fresh.id = 'yt';
-      frame.prepend(fresh);
-    }
+  } else if (elYtWrap) {
+    const fresh = document.createElement('div');
+    fresh.id = 'yt';
+    elYtWrap.prepend(fresh);
   }
 }
 
