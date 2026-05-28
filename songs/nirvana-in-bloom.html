@@ -35,26 +35,31 @@
     }
 
     /* Top row puts the control panel (left) and the audio-source slot
-       (right) side-by-side. align-items:stretch makes both children the
-       same height — the panel's natural height (driven by its content)
-       fixes the row, and the video's aspect-ratio derives its width from
-       that height. Function drives form: controls anchor the layout,
-       the decorative video adapts. Stacks on narrow screens. */
+       (right) side-by-side. Both children are 140px tall (the panel's
+       natural height with a bit of slack); align-items:stretch makes
+       the panel also fill the row's 140px so the two read as equal
+       siblings. Video is 248×140 — 16:9 derived from the chosen height,
+       function-driven (controls anchor the layout). Stacks on narrow
+       screens with a default 320-wide video. */
     .top-row {
       display: flex;
       gap: 12px;
       align-items: stretch;
     }
-    .top-row .panel { flex: 1 1 auto; min-width: 0; }
+    .top-row .panel { flex: 1 1 auto; min-width: 0; min-height: 140px; }
     .top-row .yt-wrap {
       flex: 0 0 auto;
-      /* height inherited from stretch; width derived via aspect-ratio */
+      width: 248px;
+      height: 140px;
     }
     @media (max-width: 700px) {
       .top-row { flex-direction: column; }
+      .top-row .panel { min-height: 0; }
       .top-row .yt-wrap {
         width: 320px;
         max-width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
         margin: 0 auto;
       }
     }
@@ -68,7 +73,8 @@
     }
 
     /* Title + artist collapsed onto one inline row. Visually subordinate
-       to the transport — the score is the hero, not the metadata. */
+       to the transport — the score is the hero, not the metadata. The
+       back link sits before the title (iOS-style top-left back nav). */
     .hdr {
       display: flex;
       align-items: baseline;
@@ -76,6 +82,19 @@
       margin-bottom: 8px;
       min-width: 0;
     }
+    .hdr-back {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      flex: 0 0 auto;
+      padding: 2px 6px;
+      margin-left: -6px;        /* visual flush with panel padding */
+      border-radius: 4px;
+    }
+    .hdr-back:hover { background: rgba(255, 180, 84, 0.12); }
     .hdr-title {
       font-size: 14px;
       font-weight: 600;
@@ -203,7 +222,7 @@
        in Drums source (no iframe → no slot needed). */
     .yt-wrap {
       position: relative;
-      aspect-ratio: 16 / 9;
+      /* width/height set by .top-row rules (148×140 desktop, fluid mobile) */
       background: #000;
       border-radius: 8px;
       overflow: hidden;
@@ -406,6 +425,8 @@
       <!-- Controls (dark, compact) -->
       <div class="panel">
         <div class="hdr">
+          <a href="../index.html" class="hdr-back" aria-label="All songs">&larr; All songs</a>
+          <span class="hdr-sep" aria-hidden="true">·</span>
           <span class="hdr-title" id="title">Loading…</span>
           <span class="hdr-sep" aria-hidden="true">·</span>
           <span class="hdr-artist" id="artist">&nbsp;</span>
