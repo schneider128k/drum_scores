@@ -48,6 +48,8 @@
     ul.songs .artist { color: var(--accent); font-weight: 500; }
     ul.songs .dash { color: var(--muted); }
     ul.songs .title { color: var(--fg); }
+    ul.songs .tag { color: var(--muted); font-size: 12px; }
+    .divider { border: none; border-top: 1px solid #2a2e37; margin: 28px 0; }
     .empty { color: var(--muted); }
     code {
       background: var(--panel);
@@ -68,7 +70,14 @@
   <div class="layout">
     <h1>Drum scores</h1>
     <div class="subtitle">Drum scores synced to original songs and backing tracks on YouTube, plus real drum samples. Tap a song.</div>
-    <h2>Songs</h2>
+    <h2>VexFlow renderer — live cursor</h2>
+    <ul class="songs">
+      <li><a href="vexflow/heart-shaped-box.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Heart-Shaped Box</span><span class="tag"> · travelling cursor synced to YouTube</span></a></li>
+    </ul>
+
+    <hr class="divider">
+
+    <h2>LilyPond scores</h2>
     <ul class="songs">
       <li><a href="songs/ghost-square-hammer.html"><span class="artist">Ghost</span><span class="dash"> — </span><span class="title">Square Hammer</span></a></li>
       <li><a href="songs/metallica-enter-sandman.html"><span class="artist">Metallica</span><span class="dash"> — </span><span class="title">Enter Sandman</span></a></li>
@@ -82,7 +91,7 @@
       <li><a href="songs/the-cranberries-zombie.html"><span class="artist">The Cranberries</span><span class="dash"> — </span><span class="title">Zombie</span></a></li>
     </ul>
     <div class="footer">
-      Engraving: LilyPond. Audio: CC0 drum samples (Virtuosity Drums) via Tone.js.
+      Engraving: VexFlow &amp; LilyPond. Audio: CC0 drum samples (Virtuosity Drums) via Tone.js.
     </div>
   </div>
 </body>
