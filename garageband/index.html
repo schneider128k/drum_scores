@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Beat Grid — GarageBand-style drum view</title>
+<style>
+  :root {
+    --beat-w: 180px;        /* one beat column; sized so each 16th cell is ~square (GarageBand-style) */
+    --row-h: 50px;          /* per-instrument lane height */
+    --lyric-h: 34px;        /* lyrics strip height */
+    --gutter-w: 150px;      /* fixed left label column */
+    --cell-gap: 3px;        /* gap between the 16th cells inside one beat */
+    --beat-pad: 6px;        /* horizontal inset per beat → the gap BETWEEN groups of four */
+    --barline-w: 2px;       /* measure-separator line thickness */
+    --meas-gap: 14px;       /* empty gutter before each measure (the prominent separator) */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: var(--page-bg);
+    color: var(--ink);
+    overflow: hidden;
+  }
+
+  /* ── Top control bar ─────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 18px;
+    padding: 12px 18px;
+    background: var(--bar-bg);
+    border-bottom: 1px solid var(--hair);
+    flex-wrap: wrap;
+  }
+  header .title { font-size: 15px; font-weight: 600; letter-spacing: .2px; }
+  header .title small { font-weight: 400; opacity: .55; margin-left: 8px; }
+  header .spacer { flex: 1; }
+  .ctl { display: flex; align-items: center; gap: 7px; font-size: 12px; opacity: .85; }
+  .ctl label { opacity: .6; }
+  select, button {
+    font: inherit; font-size: 12px;
+    background: var(--chip-bg); color: var(--ink);
+    border: 1px solid var(--hair); border-radius: 8px;
+    padding: 5px 9px; cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--hair-bright); }
+  #lyrToggle.on, #allToggle.on { background: var(--chip-on); color: #fff; border-color: var(--chip-on); }
+  .seg { display: inline-flex; border: 1px solid var(--hair); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 11px; background: transparent; }
+  .seg button.on { background: var(--chip-on); color: #fff; }
+  .pager { display: inline-flex; align-items: center; gap: 4px; }
+  .pager button { padding: 5px 10px; }
+  .pager .pos { font-variant-numeric: tabular-nums; opacity: .7; min-width: 92px; text-align: center; }
+
+  /* ── Sequencer surface ───────────────────────────────────────── */
+  #surface { height: calc(100% - 56px); display: flex; flex-direction: column; }
+  #ruler-wrap { display: flex; }
+  #ruler-gutter { width: var(--gutter-w); flex: 0 0 var(--gutter-w); }
+  #ruler {
+    flex: 1; overflow: hidden; position: relative; height: 26px;
+    border-bottom: 1px solid var(--hair);
+  }
+  #ruler .rinner { display: flex; height: 100%; width: max-content; }
+  .rbar {
+    flex: 0 0 auto;
+    box-sizing: content-box;   /* border sits OUTSIDE the width, like the grid's .meas (auto width) */
+    margin-left: var(--meas-gap);
+    border-left: var(--barline-w) solid var(--barline);
+    position: relative; height: 100%;
+  }
+  .rbar .bn {
+    position: absolute; left: 6px; top: 4px;
+    font-size: 11px; font-variant-numeric: tabular-nums;
+    color: var(--ink); opacity: .55; font-weight: 600;
+  }
+  .rbar .ts { position: absolute; left: 24px; top: 5px; font-size: 10px; opacity: .35; }
+
+  #lanes-wrap { flex: 1; display: flex; min-height: 0; }
+  #gutter {
+    width: var(--gutter-w); flex: 0 0 var(--gutter-w);
+    overflow: hidden; background: var(--gutter-bg);
+    border-right: 1px solid var(--hair);
+  }
+  #grid { flex: 1; overflow: auto; }
+  #gridInner { width: max-content; }
+  #grid::-webkit-scrollbar { height: 10px; width: 10px; }
+  #grid::-webkit-scrollbar-thumb { background: var(--hair-bright); border-radius: 5px; }
+
+  .lane { height: var(--row-h); display: flex; align-items: center; }
+  .lane.gut {
+    padding: 0 12px; gap: 10px;
+    border-bottom: 1px solid var(--lane-sep);
+  }
+  .lane.gut .ic { flex: 0 0 42px; height: 34px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
+  .lane.gut .nm { font-size: 12.5px; font-weight: 550; letter-spacing: .2px; }
+  .lane.gut .nm .sub { display:block; font-size: 10px; opacity:.45; font-weight: 400; }
+
+  .track { height: var(--row-h); display: flex; width: max-content; border-bottom: 1px solid var(--lane-sep); }
+  .meas { display: flex; flex: 0 0 auto; margin-left: var(--meas-gap); border-left: var(--barline-w) solid var(--barline); }
+  .beat {
+    width: var(--beat-w); flex: 0 0 var(--beat-w);
+    display: flex; gap: var(--cell-gap);
+    padding: 5px var(--beat-pad);
+  }
+  .cell {
+    flex: 1 1 0; border-radius: 5px;
+    background: var(--cell-off);
+    transition: none;
+  }
+  .cell.hit { /* per-cell inline gradient + shadow set by JS */ }
+
+  /* ── Lyrics strip (below the kit) ─────────────────────────────── */
+  .lane.gut.lyr, .track.lyr { height: var(--lyric-h); }
+  .lane.gut.lyr { color: var(--ink); opacity: .8; border-top: 1px solid var(--hair); }
+  .lane.gut.lyr .nm { font-style: italic; }
+  .track.lyr { position: relative; display: block; border-top: 1px solid var(--hair); border-bottom: 0; }
+  .syl {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 12px; line-height: 1; white-space: nowrap;
+    color: var(--ink); opacity: .82; padding-right: 5px;
+  }
+  .syl.beat1 { font-weight: 600; opacity: .95; }
+  body.lyr-off .lane.gut.lyr, body.lyr-off .track.lyr { display: none; }
+
+  /* ── Playback: playhead + the note "flash" ────────────────────── */
+  #gridInner { position: relative; }
+  #playhead {
+    position: absolute; top: 0; left: 0; width: 2px;
+    background: linear-gradient(180deg, rgba(54,179,90,.95), rgba(54,179,90,.45));
+    box-shadow: 0 0 9px 1px rgba(54,179,90,.75);
+    pointer-events: none; z-index: 4; display: none; will-change: transform;
+  }
+  /* a note pops bright as the playhead crosses it, then decays back to its lit colour */
+  @keyframes noteflash {
+    0%   { filter: brightness(2.1) saturate(1.15); transform: scale(1.18); }
+    100% { filter: brightness(1)   saturate(1);    transform: scale(1); }
+  }
+  .cell.hit.flash { animation: noteflash .34s ease-out; z-index: 3; }
+
+  /* ── Floating video + transport ───────────────────────────────── */
+  #player {
+    position: fixed; right: 16px; bottom: 16px; z-index: 50;
+    display: flex; flex-direction: column; gap: 9px;
+    padding: 11px; border-radius: 14px;
+    background: var(--bar-bg); border: 1px solid var(--hair);
+    box-shadow: 0 12px 38px rgba(0,0,0,.55);
+  }
+  #player[hidden] { display: none; }
+  #yt, #yt iframe { width: 220px; height: 124px; border: 0; border-radius: 9px; }
+  #yt { background: #000; overflow: hidden; }
+  .pctl { display: flex; align-items: center; gap: 7px; }
+  #transport { flex: 1; font-weight: 600; }
+  #transport.attention { background: #d9822b; color: #fff; border-color: #d9822b; }
+  #rate { font-variant-numeric: tabular-nums; opacity: .8; min-width: 38px; text-align: center; font-size: 12px; }
+  #hint { font-size: 11px; opacity: .6; max-width: 220px; line-height: 1.35; min-height: 14px; }
+
+  .footnote { padding: 7px 18px; font-size: 11px; opacity: .45; border-top: 1px solid var(--hair); }
+
+  /* ── THEMES ──────────────────────────────────────────────────── */
+  body.theme-classic {
+    --page-bg:#16181d; --bar-bg:#1d2026; --gutter-bg:#1b1e24;
+    --ink:#e7e9ee; --hair:#2c313a; --hair-bright:#3a414d;
+    --chip-bg:#23272f; --chip-on:#3d6bd6; --barline:#5b6678; --beatline:#262b34;
+    --lane-sep:#21252c; --cell-off:hsl(220 10% 13%);
+  }
+  body.theme-neon {
+    --page-bg:#0a0b0f; --bar-bg:#101218; --gutter-bg:#0d0f14;
+    --ink:#eef1f6; --hair:#1c2230; --hair-bright:#2a3346;
+    --chip-bg:#161a24; --chip-on:#7c5cff; --barline:#3a4a66; --beatline:#171c28;
+    --lane-sep:#13161e; --cell-off:hsl(225 16% 8%);
+  }
+  body.theme-daylight {
+    --page-bg:#262b33; --bar-bg:#2e343e; --gutter-bg:#2b313a;
+    --ink:#eef0f4; --hair:#3d4550; --hair-bright:#525c6a;
+    --chip-bg:#353c47; --chip-on:#5b8def; --barline:#717c8c; --beatline:#363d48;
+    --lane-sep:#333a44; --cell-off:hsl(220 12% 24%);
+  }
+</style>
+</head>
+<body class="theme-classic">
+  <header>
+    <div class="title" id="songTitle">Beat Grid <small id="songSub"></small></div>
+    <div class="spacer"></div>
+
+    <div class="ctl">
+      <label>Song</label>
+      <select id="songSel"></select>
+    </div>
+
+    <div class="ctl">
+      <label>Theme</label>
+      <div class="seg" id="themeSeg">
+        <button data-theme="classic" class="on">Classic</button>
+        <button data-theme="neon">Neon</button>
+        <button data-theme="daylight">Daylight</button>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <button id="lyrToggle" class="on">♪ Lyrics</button>
+      <button id="allToggle">Full kit</button>
+    </div>
+
+    <div class="ctl pager">
+      <button id="prev">‹</button>
+      <span class="pos" id="pagePos">bars 1–8</span>
+      <button id="next">›</button>
+    </div>
+  </header>
+
+  <div id="surface">
+    <div id="ruler-wrap">
+      <div id="ruler-gutter"></div>
+      <div id="ruler"><div class="rinner" id="rulerInner"></div></div>
+    </div>
+    <div id="lanes-wrap">
+      <div id="gutter"></div>
+      <div id="grid"><div id="gridInner"><div id="playhead"></div></div></div>
+    </div>
+  </div>
+  <div class="footnote" id="foot"></div>
+
+  <div id="player" hidden>
+    <div id="yt"></div>
+    <div class="pctl">
+      <button id="transport" disabled>▶ Play</button>
+      <button id="source" title="Switch audio source (cover / backing / original)">Source</button>
+    </div>
+    <div class="pctl">
+      <button id="slower">−</button><span id="rate">100%</span><button id="faster">+</button>
+    </div>
+    <div id="hint"></div>
+  </div>
+
+<!-- score data: each file sets window.SCORE. We load on demand. -->
+<script>
+// ── Catalog: id → {file, label}. Files live in ../vexflow/ ──────────────────
+const CATALOG = [
+  ['31_6',     'Heart-Shaped Box — Nirvana'],
+  ['14_6',     'Come As You Are — Nirvana'],
+  ['269_5',    'Smells Like Teen Spirit — Nirvana'],
+  ['295_5',    'In Bloom — Nirvana (triplets)'],
+  ['97_6',     'Creep — Radiohead (triplets)'],
+  ['412647_8', 'Square Hammer — Ghost (triplets)'],
+  ['19_8',     'Enter Sandman — Metallica'],
+  ['431_5',    'Zombie — The Cranberries'],
+  ['89089_8',  'Eye Of The Tiger — Survivor'],
+  ['16093_3',  'Wave Of Mutilation — Pixies'],
+];
+
+// ── Canonical kit lanes, top→bottom, ordered high→low like a real kit:
+//    cymbals/hats, then toms above the snare, snare + its side-stick, floor tom,
+//    kick at the bottom. Stable hue per instrument family so a lane's colour
+//    never depends on which other lanes a song happens to use.
+const LANES = [
+  { id:'crash',    name:'Crash',      sub:'cymbal',  hue:282, icon:'cymbal',   lily:['crashcymbal','crashcymbalb','splashcymbal','chinesecymbal'] },
+  { id:'ride',     name:'Ride',       sub:'cymbal',  hue:210, icon:'ride',     lily:['ridecymbal','ridebell'] },
+  { id:'openhh',   name:'Open Hat',   sub:'hi-hat',  hue:190, icon:'hatOpen',  lily:['openhihat','halfopenhihat'] },
+  { id:'closedhh', name:'Closed Hat', sub:'hi-hat',  hue:168, icon:'hatClosed',lily:['closedhihat'] },
+  { id:'pedalhh',  name:'Pedal Hat',  sub:'foot',    hue:150, icon:'hatPedal', lily:['pedalhihat'] },
+  { id:'hitom',    name:'Hi Tom',     sub:'rack',    hue:40,  icon:'tomHi',    lily:['hightom'] },
+  { id:'midtom',   name:'Mid Tom',    sub:'rack',    hue:28,  icon:'tomMid',   lily:['lowtom','tommh'] },
+  { id:'snare',    name:'Snare',      sub:'snare',   hue:52,  icon:'snare',    lily:['acousticsnare'] },
+  { id:'sidestick',name:'Side Stick', sub:'rim',     hue:95,  icon:'stick',    lily:['sidestick'] },
+  { id:'floortom', name:'Floor Tom',  sub:'floor',   hue:15,  icon:'floortom', lily:['lowfloortom','highfloortom'] },
+  { id:'kick',     name:'Kick',       sub:'bass',    hue:350, icon:'kick',     lily:['bassdrum'] },
+];
+const LILY2LANE = {};
+LANES.forEach(l => l.lily.forEach(n => LILY2LANE[n] = l.id));
+
+// velocity word → 0..1 loudness (drives lit-cell brightness + glow)
+const VEL = { ppp:.20, pp:.28, p:.40, mp:.50, mf:.62, f:.78, ff:.90, fff:1.0 };
+
+// ── Theme colour curves. cellStyle(hue, vel, accent, ghost) → inline CSS. ────
+const THEMES = {
+  classic:  { litL:54, litS:78, topBoost:16, glowA:.55, glowR:13 },
+  neon:     { litL:58, litS:92, topBoost:20, glowA:.80, glowR:18 },
+  daylight: { litL:68, litS:62, topBoost:12, glowA:.32, glowR:9  },
+};
+let THEME = 'classic';
+let SHOW_ALL = false;     // "Full kit": show every canonical lane, not just the used ones
+let LAST_SCORE = null;    // kept so the Full-kit toggle can rebuild without reloading
+
+function cellStyle(hue, vel, accent, ghost) {
+  const t = THEMES[THEME];
+  // brightness tracks velocity; accents punch up, ghosts drop down + shrink glow
+  let L = t.litL + (vel - 0.62) * 26 + (accent ? 9 : 0) - (ghost ? 16 : 0);
+  L = Math.max(28, Math.min(86, L));
+  const S = t.litS - (ghost ? 22 : 0);
+  const top = `hsl(${hue} ${S}% ${Math.min(92, L + t.topBoost)}%)`;
+  const bot = `hsl(${hue} ${S}% ${L}%)`;
+  const glowR = (ghost ? t.glowR * 0.4 : t.glowR) * (0.6 + vel * 0.7) * (accent ? 1.5 : 1);
+  const glowA = t.glowA * (ghost ? 0.4 : 1);
+  const inset = `inset 0 1px 0 hsla(${hue} 100% 90% / ${ghost?.15:.45})`;
+  const glow  = `0 0 ${glowR.toFixed(1)}px hsla(${hue} 95% 62% / ${glowA.toFixed(2)})`;
+  const accentRing = accent ? `, 0 0 0 1.5px hsla(${hue} 95% 80% / .9)` : '';
+  return `background:linear-gradient(180deg, ${top}, ${bot});box-shadow:${inset}, ${glow}${accentRing};`;
+}
+
+// ── Lane icons — Apple-grade drum-kit glyphs. Each is a 48×40 SVG with its own
+//    <defs> of hue-derived gradients (unique ids per lane so they never clash):
+//      disc-  radial brass/anodised sheen for cymbals
+//      cyl-   horizontal cylinder shading (dark edges → bright centre) for shells
+//      head-  radial drum-head sheen
+//      chrome- vertical metal gradient for rods/rims/lugs/hardware
+//      sh-    soft radial contact shadow
+//    White speculars on top read as "polished" regardless of hue, so each piece
+//    stays colour-coded to its lane yet looks like a real, lit instrument.
+function defs(id, h) {
+  return `<defs>
+    <radialGradient id="disc-${id}" cx=".40" cy=".26" r=".95">
+      <stop offset="0" stop-color="hsl(${h} 90% 84%)"/><stop offset=".42" stop-color="hsl(${h} 68% 58%)"/>
+      <stop offset=".82" stop-color="hsl(${h} 60% 40%)"/><stop offset="1" stop-color="hsl(${h} 56% 30%)"/>
+    </radialGradient>
+    <linearGradient id="cyl-${id}" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="hsl(${h} 52% 24%)"/><stop offset=".2" stop-color="hsl(${h} 66% 56%)"/>
+      <stop offset=".5" stop-color="hsl(${h} 74% 66%)"/><stop offset=".8" stop-color="hsl(${h} 60% 44%)"/>
+      <stop offset="1" stop-color="hsl(${h} 52% 22%)"/>
+    </linearGradient>
+    <radialGradient id="head-${id}" cx=".42" cy=".36" r=".9">
+      <stop offset="0" stop-color="hsl(${h} 46% 72%)"/><stop offset=".55" stop-color="hsl(${h} 50% 56%)"/>
+      <stop offset="1" stop-color="hsl(${h} 56% 38%)"/>
+    </radialGradient>
+    <radialGradient id="kickhead-${id}" cx=".40" cy=".34" r=".9">
+      <stop offset="0" stop-color="hsl(${h} 52% 46%)"/><stop offset=".55" stop-color="hsl(${h} 60% 30%)"/>
+      <stop offset="1" stop-color="hsl(${h} 66% 17%)"/>
+    </radialGradient>
+    <linearGradient id="chrome-${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f5f8"/><stop offset=".5" stop-color="#9aa3ad"/><stop offset="1" stop-color="#454c55"/>
+    </linearGradient>
+    <radialGradient id="sh-${id}" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="rgba(0,0,0,.45)"/><stop offset="1" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+  </defs>`;
+}
+
+// A drum shell (used by toms, snare, floor tom) viewed SLIGHTLY FROM ABOVE:
+// the top head is a full ellipse, the sides are vertical, and the bottom is only
+// the FRONT arc (the back of the bottom rim is hidden behind the shell) — so you
+// never see a full circle at both ends. Chrome tension lugs march down the shell.
+function shell(id, h, cx, top, w, ht, lugRows) {
+  const rx = w / 2, ry = w * 0.17, bot = top + ht;
+  const body   = `M ${cx-rx} ${top} L ${cx-rx} ${bot} Q ${cx} ${bot+ry*2} ${cx+rx} ${bot} L ${cx+rx} ${top} Z`;
+  const botArc = `M ${cx-rx} ${bot} Q ${cx} ${bot+ry*2} ${cx+rx} ${bot}`;
+  let lugs = '';
+  for (let i = 0; i < lugRows; i++) {
+    const y = top + ht * (i + 0.5) / (lugRows + 0.2);
+    for (const sx of [cx - rx, cx + rx]) {
+      lugs += `<rect x="${(sx - 1.4).toFixed(1)}" y="${y.toFixed(1)}" width="2.8" height="4.4" rx="1.2" fill="url(#chrome-${id})"/>`;
+    }
+  }
+  return `
+    <ellipse cx="${cx}" cy="${bot + ry + 2}" rx="${rx + 1}" ry="2.6" fill="url(#sh-${id})"/>
+    <path d="${body}" fill="url(#cyl-${id})"/>
+    <rect x="${cx - rx * .4}" y="${top}" width="${rx * .3}" height="${ht}" fill="#fff" opacity=".10"/>
+    ${lugs}
+    <path d="${botArc}" fill="none" stroke="url(#chrome-${id})" stroke-width="2.2" stroke-linecap="round"/>
+    <ellipse cx="${cx}" cy="${top}" rx="${rx}" ry="${ry}" fill="url(#head-${id})" stroke="url(#chrome-${id})" stroke-width="2.2"/>
+    <ellipse cx="${cx}" cy="${top}" rx="${rx - 1.8}" ry="${Math.max(0.6, ry - 1)}" fill="none" stroke="hsl(${h} 48% 30%)" stroke-width=".7" opacity=".45"/>
+    <ellipse cx="${cx - rx * .26}" cy="${top - ry * .32}" rx="${rx * .3}" ry="${ry * .3}" fill="#fff" opacity=".26"/>`;
+}
+
+// A cymbal disc on a stand. ry sets how flat it sits; grooves adds lathe rings.
+function cymbalDisc(id, h, cy, ry, grooves) {
+  return `
+    <ellipse cx="24" cy="35" rx="15" ry="2.6" fill="url(#sh-${id})"/>
+    <rect x="23.1" y="${cy}" width="1.8" height="${34 - cy}" rx=".9" fill="url(#chrome-${id})"/>
+    <ellipse cx="24" cy="${cy}" rx="22" ry="${ry}" fill="url(#disc-${id})" stroke="hsl(${h} 82% 82%)" stroke-width=".7"/>
+    ${grooves ? `<ellipse cx="24" cy="${cy}" rx="16" ry="${ry*.72}" fill="none" stroke="hsl(${h} 72% 74%)" stroke-width=".5" opacity=".5"/>
+                 <ellipse cx="24" cy="${cy}" rx="10" ry="${ry*.45}" fill="none" stroke="hsl(${h} 72% 74%)" stroke-width=".5" opacity=".5"/>` : ''}
+    <ellipse cx="24" cy="${cy - 1}" rx="3.6" ry="1.5" fill="hsl(${h} 90% 84%)"/>
+    <ellipse cx="16" cy="${cy - 1}" rx="7" ry="1.6" fill="#fff" opacity=".42"/>`;
+}
+
+const ICONS = {
+  cymbal(id, h) { return cymbalDisc(id, h, 13, 5.2, true); },
+  ride(id, h)   { return cymbalDisc(id, h, 13, 6.0, true)
+    + `<ellipse cx="24" cy="13" rx="6" ry="1.7" fill="none" stroke="#fff" stroke-width=".6" opacity=".5"/>`; },
+  hatOpen(id, h) {
+    return `<ellipse cx="24" cy="35" rx="15" ry="2.6" fill="url(#sh-${id})"/>
+      <rect x="23.1" y="6" width="1.8" height="28" rx=".9" fill="url(#chrome-${id})"/>
+      <ellipse cx="24" cy="19" rx="20" ry="4" fill="hsl(${h} 52% 40%)" stroke="hsl(${h} 72% 64%)" stroke-width=".7"/>
+      <ellipse cx="24" cy="9" rx="20" ry="4.4" fill="url(#disc-${id})" stroke="hsl(${h} 82% 82%)" stroke-width=".7"/>
+      <ellipse cx="16" cy="8" rx="6.5" ry="1.6" fill="#fff" opacity=".42"/>
+      <circle cx="24" cy="5" r="1.7" fill="url(#chrome-${id})"/>`;
+  },
+  hatClosed(id, h) {
+    return `<ellipse cx="24" cy="35" rx="15" ry="2.6" fill="url(#sh-${id})"/>
+      <rect x="23.1" y="14" width="1.8" height="20" rx=".9" fill="url(#chrome-${id})"/>
+      <ellipse cx="24" cy="16" rx="21" ry="4.2" fill="hsl(${h} 52% 42%)" stroke="hsl(${h} 72% 64%)" stroke-width=".7"/>
+      <ellipse cx="24" cy="13" rx="21" ry="4.4" fill="url(#disc-${id})" stroke="hsl(${h} 82% 82%)" stroke-width=".7"/>
+      <ellipse cx="16" cy="12" rx="7" ry="1.6" fill="#fff" opacity=".42"/>
+      <circle cx="24" cy="9" r="1.7" fill="url(#chrome-${id})"/>`;
+  },
+  hatPedal(id, h) {
+    // two CLOSED cymbals (foot keeps them shut) on a short rod, sitting on a real
+    // pedal: an angled footboard hinged at a heel plate, with the pull-rod running
+    // down into it. The pedal is what tells this lane apart from the closed hat.
+    return `<ellipse cx="25" cy="34" rx="15" ry="2.4" fill="url(#sh-${id})"/>
+      <ellipse cx="24" cy="11.5" rx="17" ry="3.4" fill="hsl(${h} 52% 42%)" stroke="hsl(${h} 72% 64%)" stroke-width=".7"/>
+      <ellipse cx="24" cy="9" rx="17" ry="3.6" fill="url(#disc-${id})" stroke="hsl(${h} 82% 82%)" stroke-width=".7"/>
+      <ellipse cx="16" cy="8" rx="6" ry="1.5" fill="#fff" opacity=".42"/>
+      <rect x="23.2" y="9" width="1.6" height="17" fill="url(#chrome-${id})"/>
+      <g transform="rotate(-7 24 28)">
+        <rect x="13" y="26.4" width="27" height="3.6" rx="1.8" fill="url(#chrome-${id})"/>
+        <rect x="14" y="27.1" width="25" height="1.1" rx=".55" fill="#fff" opacity=".4"/>
+      </g>
+      <rect x="9" y="29.5" width="8.5" height="2.8" rx="1.2" fill="#454c55"/>
+      <circle cx="13" cy="30.9" r="1" fill="#9aa3ad"/>`;
+  },
+  tomHi(id, h)    { return shell(id, h, 24, 10, 21, 16, 2); },
+  tomMid(id, h)   { return shell(id, h, 24, 8, 26, 21, 3); },
+  snare(id, h)    {
+    return shell(id, h, 24, 13, 32, 13, 2)
+      + `<g opacity=".75" stroke="hsl(${h} 70% 80%)" stroke-width=".7">
+           <line x1="11" y1="23" x2="13" y2="27"/><line x1="17" y1="24" x2="18" y2="28"/>
+           <line x1="24" y1="24.3" x2="24" y2="28.3"/><line x1="31" y1="24" x2="30" y2="28"/>
+           <line x1="37" y1="23" x2="35" y2="27"/></g>
+         <rect x="38" y="20" width="3.5" height="6" rx="1.5" fill="url(#chrome-${id})"/>`;
+  },
+  floortom(id, h) {
+    // biggest shell, sitting on three chrome legs
+    return `<line x1="10" y1="27" x2="5" y2="39" stroke="url(#chrome-${id})" stroke-width="2.6" stroke-linecap="round"/>
+            <line x1="38" y1="27" x2="43" y2="39" stroke="url(#chrome-${id})" stroke-width="2.6" stroke-linecap="round"/>
+            <line x1="24" y1="30" x2="24" y2="40" stroke="url(#chrome-${id})" stroke-width="2.6" stroke-linecap="round"/>`
+            + shell(id, h, 24, 6, 32, 23, 3);
+  },
+  kick(id, h) {
+    let lugs = '';
+    const N = 10, R = 16.2, cx = 24, cy = 19;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * 6.2831853;
+      lugs += `<circle cx="${(cx + Math.cos(a) * R).toFixed(1)}" cy="${(cy + Math.sin(a) * R).toFixed(1)}" r="1.4" fill="url(#chrome-${id})"/>`;
+    }
+    return `<ellipse cx="24" cy="37.5" rx="16" ry="2.4" fill="url(#sh-${id})"/>
+      <line x1="13" y1="30" x2="6" y2="38" stroke="url(#chrome-${id})" stroke-width="2.4" stroke-linecap="round"/>
+      <line x1="35" y1="30" x2="42" y2="38" stroke="url(#chrome-${id})" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="18" fill="url(#chrome-${id})"/>
+      <circle cx="${cx}" cy="${cy}" r="15.8" fill="url(#kickhead-${id})"/>
+      ${lugs}
+      <ellipse cx="17" cy="12" rx="7.5" ry="4.5" fill="#fff" opacity=".18"/>
+      <circle cx="${cx}" cy="${cy}" r="4.2" fill="hsl(${h} 62% 14%)"/>
+      <circle cx="${cx}" cy="${cy}" r="4.2" fill="none" stroke="hsl(${h} 50% 40%)" stroke-width=".9"/>`;
+  },
+  stick(id, h) {
+    const one = `<rect x="5" y="17.4" width="38" height="5.2" rx="2.6" fill="url(#cyl-${id})"/>
+                 <rect x="5" y="18.1" width="38" height="1.5" rx=".75" fill="#fff" opacity=".35"/>
+                 <circle cx="41" cy="20" r="3" fill="hsl(${h} 72% 62%)"/>`;
+    return `<ellipse cx="24" cy="33" rx="13" ry="2.4" fill="url(#sh-${id})"/>
+            <g transform="rotate(-19 24 20)">${one}</g><g transform="rotate(19 24 20)">${one}</g>`;
+  },
+};
+function laneIcon(lane) {
+  const draw = ICONS[lane.icon] || ICONS.tomMid;
+  return `<svg class="ic" viewBox="0 0 48 40">${defs(lane.id, lane.hue)}${draw(lane.id, lane.hue)}</svg>`;
+}
+
+// ── Fraction helpers (IR fractions are [num,den]). Float is fine for binning. ─
+const F = ([n,d]) => n / d;
+
+// Build the time grid + hit matrix for one score.
+// Returns { lanes:[laneDef...], cols:[{measIdx,beatIdx,sub,cellW}], bars:[{...}],
+//           hits: Map "laneId|measIdx|beatIdx|subcell" -> {vel,accent,ghost} }
+function buildModel(score) {
+  const measures = score.measures || [];
+
+  // which lanes are actually used → keep canonical order, drop empties.
+  // "Full kit" mode shows every canonical lane (so unused icons are visible too).
+  const used = new Set();
+  for (const m of measures) for (const ev of m.events) for (const n of (ev.notes||[]))
+    if (LILY2LANE[n.lily]) used.add(LILY2LANE[n.lily]);
+  const lanes = SHOW_ALL ? LANES.slice() : LANES.filter(l => used.has(l.id));
+
+  const bars = [];
+  const hits = new Map();
+  let colCount = 0;
+
+  measures.forEach((m, mi) => {
+    const beatDen = m.time_sig[1];
+    const beatWhole = 1 / beatDen;                 // one beat in whole-notes
+    const measWhole = F(m.duration);
+    const nBeats = Math.max(1, Math.round(measWhole / beatWhole));
+    const mPos = F(m.position);
+
+    // per-beat subdivision: 4 (straight 16ths) unless a tuplet sits in the beat
+    const beatSub = new Array(nBeats).fill(4);
+    const beatEvents = Array.from({length:nBeats}, () => []);
+    for (const ev of m.events) {
+      const rel = F(ev.position) - mPos;
+      let bi = Math.floor(rel / beatWhole + 1e-6);
+      if (bi < 0) bi = 0; if (bi >= nBeats) bi = nBeats - 1;
+      beatEvents[bi].push(ev);
+      if (ev.tuplet_group != null && ev.tuplet_n) beatSub[bi] = ev.tuplet_n;
+    }
+
+    bars.push({ mi, nBeats, beatSub, startCol: colCount, time_sig: m.time_sig,
+                marker: m.marker || null });
+
+    for (let bi = 0; bi < nBeats; bi++) {
+      const sub = beatSub[bi];
+      colCount += sub;
+      const subWhole = beatWhole / sub;
+      for (const ev of beatEvents[bi]) {
+        const rel = F(ev.position) - mPos - bi * beatWhole;
+        let sc = Math.round(rel / subWhole);
+        if (sc < 0) sc = 0; if (sc >= sub) sc = sub - 1;
+        const vel = VEL[ev.velocity] ?? 0.62;
+        for (const n of (ev.notes||[])) {
+          const lid = LILY2LANE[n.lily]; if (!lid) continue;
+          const key = `${lid}|${mi}|${bi}|${sc}`;
+          const prev = hits.get(key);
+          const cur = { vel, accent: !!n.accent, ghost: !!n.ghost };
+          // if two notes share a cell, keep the louder/accented
+          if (!prev || cur.accent || cur.vel > prev.vel) hits.set(key, cur);
+        }
+      }
+    }
+  });
+
+  return { lanes, bars, hits, measures, lyrics: score.lyrics || [] };
+}
+
+// Geometry constants, read from the CSS custom properties so the layout and the
+// pixel maths (lyrics, scrolling, position readout) can never drift apart. Each
+// bar's footprint = meas-gap + barline + nBeats·beat-w; a beat stays exactly
+// beat-w (the inter-group gap is padding INSIDE that width, so it doesn't count).
+function geom() {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    beatW: parseFloat(cs.getPropertyValue('--beat-w')),
+    bl:    parseFloat(cs.getPropertyValue('--barline-w')),
+    mg:    parseFloat(cs.getPropertyValue('--meas-gap')),
+  };
+}
+// Content-left x of every bar + the total strip width.
+function barLefts(model, g) {
+  const lefts = {};
+  let x = 0;
+  for (const b of model.bars) { x += g.mg + g.bl; lefts[b.mi] = x; x += b.nBeats * g.beatW; }
+  return { lefts, total: x };
+}
+// Pixel x of an absolute whole-note position — independent of how each beat is
+// subdivided, so lyrics line up with the notes above them.
+function posToX(model, posFrac) {
+  const g = geom(), { lefts } = barLefts(model, g), target = F(posFrac);
+  const last = model.bars[model.bars.length - 1];
+  for (const b of model.bars) {
+    const m = model.measures[b.mi], mPos = F(m.position), beatWhole = 1 / m.time_sig[1];
+    if (target < mPos + b.nBeats * beatWhole - 1e-9 || b === last) {
+      return lefts[b.mi] + (Math.max(0, target - mPos) / beatWhole) * g.beatW;
+    }
+  }
+  return 0;
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+// One continuous, horizontally-scrollable timeline (GarageBand-style), not pages.
+let MODEL = null;
+
+function renderRuler(bars) {
+  const inner = document.getElementById('rulerInner');
+  inner.innerHTML = '';
+  for (const b of bars) {
+    const w = b.beatSub.length;                 // # beats → width in beat-units
+    const el = document.createElement('div');
+    el.className = 'rbar';
+    el.style.width = `calc(var(--beat-w) * ${w})`;
+    let label = `<span class="bn">${b.mi + 1}</span>`;
+    if (b.marker) label += `<span class="ts">${b.marker}</span>`;
+    el.innerHTML = label;
+    inner.appendChild(el);
+  }
+}
+
+function renderGutter(lanes) {
+  const g = document.getElementById('gutter');
+  g.innerHTML = '';
+  for (const l of lanes) {
+    const row = document.createElement('div');
+    row.className = 'lane gut';
+    row.innerHTML = `${laneIcon(l)}<div class="nm">${l.name}<span class="sub">${l.sub}</span></div>`;
+    g.appendChild(row);
+  }
+}
+
+function renderGrid(model, bars) {
+  const root = document.getElementById('gridInner');
+  const playhead = document.getElementById('playhead');
+  root.innerHTML = '';
+  root.appendChild(playhead);          // survive the clear — it lives inside the scroll content
+  model.playCells = [];                // {posWhole, el} for every hit, for the sync flash
+  for (const lane of model.lanes) {
+    const track = document.createElement('div');
+    track.className = 'track';
+    for (const b of bars) {
+      const m = model.measures[b.mi];
+      const mPos = F(m.position), beatWhole = 1 / m.time_sig[1];
+      const meas = document.createElement('div');
+      meas.className = 'meas';
+      for (let bi = 0; bi < b.nBeats; bi++) {
+        const sub = b.beatSub[bi];
+        const beat = document.createElement('div');
+        beat.className = 'beat';
+        for (let sc = 0; sc < sub; sc++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const hit = model.hits.get(`${lane.id}|${b.mi}|${bi}|${sc}`);
+          if (hit) {
+            cell.classList.add('hit');
+            cell.setAttribute('style', cellStyle(lane.hue, hit.vel, hit.accent, hit.ghost));
+            model.playCells.push({ posWhole: mPos + bi * beatWhole + sc * beatWhole / sub, el: cell });
+          }
+          beat.appendChild(cell);
+        }
+        meas.appendChild(beat);
+      }
+      track.appendChild(meas);
+    }
+    root.appendChild(track);
+  }
+}
+
+// leftmost visible bar number, for the position readout
+function updatePos() {
+  const grid = document.getElementById('grid');
+  const g = geom(), { lefts } = barLefts(MODEL, g);
+  let bar = 1;
+  for (const b of MODEL.bars) {
+    if (lefts[b.mi] + b.nBeats * g.beatW > grid.scrollLeft + 4) { bar = b.mi + 1; break; }
+  }
+  document.getElementById('pagePos').textContent = `bar ${bar} of ${MODEL.bars.length}`;
+}
+
+// scroll so the first bar that carries a hit sits near the left edge
+function scrollToFirstHit() {
+  const grid = document.getElementById('grid');
+  const g = geom(), { lefts } = barLefts(MODEL, g);
+  const firstMi = MODEL.bars.find(b =>
+    [...MODEL.hits.keys()].some(k => +k.split('|')[1] === b.mi))?.mi ?? 0;
+  grid.scrollLeft = Math.max(0, lefts[firstMi] - g.mg - g.bl);
+  document.getElementById('ruler').scrollLeft = grid.scrollLeft;
+  updatePos();
+}
+
+// Lyrics strip: one gutter label + an absolutely-positioned syllable per onset,
+// aligned to the same column geometry as the notes above.
+function renderLyrics(model) {
+  if (!model.lyrics.length) return;
+
+  const gl = document.createElement('div');
+  gl.className = 'lane gut lyr';
+  gl.innerHTML = `<div class="nm">Lyrics</div>`;
+  document.getElementById('gutter').appendChild(gl);
+
+  const strip = document.createElement('div');
+  strip.className = 'track lyr';
+  strip.style.width = barLefts(model, geom()).total + 'px';
+
+  for (const s of model.lyrics) {
+    const span = document.createElement('span');
+    span.className = 'syl';
+    span.textContent = s.text + (s.cont ? '-' : '');
+    span.style.left = posToX(model, s.pos) + 'px';
+    strip.appendChild(span);
+  }
+  document.getElementById('gridInner').appendChild(strip);
+}
+
+function draw() {
+  renderRuler(MODEL.bars);
+  renderGutter(MODEL.lanes);
+  renderGrid(MODEL, MODEL.bars);
+  renderLyrics(MODEL);
+  updatePos();
+  if (SCHED) refreshPlaybackCells();   // cells were recreated → rebuild the flash schedule
+  document.getElementById('foot').textContent =
+    `${MODEL.lanes.length} lanes · ${MODEL.bars.length} bars · ` +
+    `straight beats split into 16ths (4 cells); triplet beats split into 3 — ` +
+    `beat width is constant so bars always line up. Scroll horizontally or use ‹ ›.`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// YouTube sync — ported from the VexFlow player (vexflow/renderer.js): the same
+// per-measure points[] → score-seconds map and the same type-2 PI clock that
+// fuses YouTube's quantised getCurrentTime() into a smooth, monotonic media
+// clock. Here the per-frame output drives a playhead + flashes each note as the
+// playhead crosses its onset, instead of a travelling bar over a stave.
+// ════════════════════════════════════════════════════════════════════════════
+let SCHED = null, OFFSET = 0;
+let YT_PLAYER = null, YT_READY = false, IS_PLAYING = false;
+let SYNCED = false, STARTED = false;     // transport FSM: IDLE→PRESYNC→PLAYING⇄PAUSED
+let YT_API_LOADED = false, PENDING_VIDEO = null;
+let CANDS = [], CAND_IDX = 0;            // playable video candidates for the current song
+
+// Human-friendly source labels. The official video (feature null) is listed LAST
+// and is usually NOT embeddable (rights holder blocks it → "Watch on YouTube"),
+// so we default to an embeddable cover/backing and fall back further on error.
+const FEATURE_LABEL = { backing: 'Backing', alternative: 'Cover', solo: 'Solo',
+                        playthrough: 'Play-through', drums: 'Drums', null: 'Original' };
+function orderedCandidates(score) {
+  const all = (score.youtube_candidates || []).filter(c => c.points && c.points.length >= 2);
+  const rank = c => c.feature == null ? 3 : (c.feature === 'backing' ? 0 : (c.feature === 'alternative' ? 1 : 2));
+  return all.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map(x => x.c);
+}
+function chosenCand() { return CANDS[CAND_IDX] || null; }
+const RATES = [0.25, 0.5, 0.75, 1];
+let RATE_IDX = RATES.length - 1, PLAYBACK_RATE = 1;
+// PI clock state (see the long note in renderer.js)
+let CLK_M = 0, CLK_R = 1, CLK_TAU = 0, CLK_RAW = NaN, CLK_OUT = 0;
+const CLK_KP = 0.2, CLK_KI = 0.05, CLK_SEEK_EPS = 0.35, LATENCY_LEAD = 0.05;
+let SPLINE = null, _xHint = 0;
+let FLASH_LIST = [], FLASH_IDX = 0, LAST_FLASH_T = -1;
+
+// position (whole-notes) → score-seconds, from a YT candidate's per-bar anchors.
+// Each candidate carries its OWN points[] + offset (different video → different
+// timing), so we read them off the candidate, not the score's top-level id.
+function buildSecondsAt(score, cand) {
+  const measures = score.measures || [];
+  const points = cand && cand.points;
+  if (!points || points.length < 2 || points.length > measures.length) return null;
+  const n = measures.length, nPts = points.length, offset = Number(cand.offset) || 0;
+  const mPos = measures.map(m => F(m.position)), mDur = measures.map(m => F(m.duration));
+  const starts = new Array(n), ends = new Array(n);
+  for (let i = 0; i < nPts; i++) starts[i] = points[i] - offset;
+  for (let i = 0; i < nPts - 1; i++) ends[i] = points[i + 1] - offset;
+  const lastSpw = mDur[nPts - 2] > 0 ? (starts[nPts - 1] - starts[nPts - 2]) / mDur[nPts - 2] : 1;
+  ends[nPts - 1] = starts[nPts - 1] + lastSpw * mDur[nPts - 1];
+  let cursor = ends[nPts - 1];
+  for (let i = nPts; i < n; i++) { starts[i] = cursor; cursor += lastSpw * mDur[i]; ends[i] = cursor; }
+  function at(absPos) {
+    let i = 0; while (i < n - 1 && absPos >= mPos[i] + mDur[i]) i++;
+    const f = mDur[i] > 0 ? (absPos - mPos[i]) / mDur[i] : 0;
+    return starts[i] + f * (ends[i] - starts[i]);
+  }
+  return { at, total: ends[n - 1], offset };
+}
+
+// Build x(t) as a MONOTONE CUBIC Hermite spline through one knot per bar downbeat
+// (tₖ = downbeat seconds, xₖ = bar's left edge), plus a final knot at the last
+// bar's content-end. Consecutive knots share their endpoint (xₖ₊₁ is the next
+// bar's left, which already includes the inter-measure gap), so the curve is
+// CONTINUOUS — the gap is swept, never jumped. Fritsch–Carlson tangents make it
+// C¹ (smooth velocity) and guaranteed monotonic (the playhead never backs up).
+function buildSpline() {
+  const g = geom(), { lefts } = barLefts(MODEL, g);
+  const ts = [], xs = [];
+  for (const b of MODEL.bars) { ts.push(SCHED.at(F(MODEL.measures[b.mi].position))); xs.push(lefts[b.mi]); }
+  const lb = MODEL.bars[MODEL.bars.length - 1], lm = MODEL.measures[lb.mi];
+  ts.push(SCHED.at(F(lm.position) + lb.nBeats / lm.time_sig[1]));
+  xs.push(lefts[lb.mi] + lb.nBeats * g.beatW);
+
+  const n = ts.length, d = new Array(Math.max(0, n - 1)), ms = new Array(n);
+  for (let i = 0; i < n - 1; i++) { const h = ts[i + 1] - ts[i]; d[i] = h > 0 ? (xs[i + 1] - xs[i]) / h : 0; }
+  if (n === 1) ms[0] = 0;
+  else { ms[0] = d[0]; ms[n - 1] = d[n - 2]; for (let i = 1; i < n - 1; i++) ms[i] = (d[i - 1] + d[i]) / 2; }
+  for (let i = 0; i < n - 1; i++) {                 // clamp tangents to keep it monotonic
+    if (d[i] === 0) { ms[i] = 0; ms[i + 1] = 0; continue; }
+    const a = ms[i] / d[i], b = ms[i + 1] / d[i], s = a * a + b * b;
+    if (s > 9) { const tau = 3 / Math.sqrt(s); ms[i] = tau * a * d[i]; ms[i + 1] = tau * b * d[i]; }
+  }
+  SPLINE = { ts, xs, ms, n };
+  _xHint = 0;
+}
+function timeToX(t) {
+  const sp = SPLINE; if (!sp) return 0;
+  const { ts, xs, ms, n } = sp;
+  if (t <= ts[0]) return xs[0];
+  if (t >= ts[n - 1]) return xs[n - 1];
+  let i = _xHint;
+  if (i >= n - 1 || ts[i] > t) i = 0;
+  while (i < n - 1 && ts[i + 1] <= t) i++;
+  _xHint = i;
+  const h = ts[i + 1] - ts[i], s = h > 0 ? (t - ts[i]) / h : 0;
+  const s2 = s * s, s3 = s2 * s;                    // Hermite basis
+  return (2*s3 - 3*s2 + 1) * xs[i] + (s3 - 2*s2 + s) * h * ms[i]
+       + (-2*s3 + 3*s2) * xs[i + 1] + (s3 - s2) * h * ms[i + 1];
+}
+
+// Build the flash schedule: every hit cell's onset in score-seconds, sorted.
+function refreshPlaybackCells() {
+  if (!SCHED || !MODEL.playCells) { FLASH_LIST = []; return; }
+  FLASH_LIST = MODEL.playCells.map(c => ({ sec: SCHED.at(c.posWhole), el: c.el }))
+                              .sort((a, b) => a.sec - b.sec);
+  buildSpline();
+  const ph = document.getElementById('playhead');
+  ph.style.height = document.getElementById('gridInner').scrollHeight + 'px';
+  FLASH_IDX = 0; LAST_FLASH_T = -1;
+}
+
+// Pop a note bright, then let the CSS animation decay it back to its lit colour.
+function flash(el) {
+  el.classList.remove('flash');
+  void el.offsetWidth;           // restart the keyframe even if it's mid-flash
+  el.classList.add('flash');
+}
+function lowerBound(t) {          // first index with sec > t (for seek re-anchoring)
+  let lo = 0, hi = FLASH_LIST.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (FLASH_LIST[mid].sec <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+function fireFlashes(t) {
+  if (t < LAST_FLASH_T - 0.05 || t - LAST_FLASH_T > 0.5) FLASH_IDX = lowerBound(t);  // seek/jump: don't burst
+  else while (FLASH_IDX < FLASH_LIST.length && FLASH_LIST[FLASH_IDX].sec <= t) flash(FLASH_LIST[FLASH_IDX++].el);
+  LAST_FLASH_T = t;
+}
+function movePlayhead(t) {
+  const ph = document.getElementById('playhead');
+  const x = timeToX(t);
+  ph.style.display = 'block';
+  ph.style.transform = `translateX(${x}px)`;
+  const grid = document.getElementById('grid');
+  grid.scrollLeft = Math.max(0, x - grid.clientWidth * 0.35);   // teleprompter follow
+  document.getElementById('ruler').scrollLeft = grid.scrollLeft;
+}
+
+// ── PI clock (verbatim behaviour from renderer.js) ───────────────────────────
+function clkHardSet(s) { CLK_M = s; CLK_R = PLAYBACK_RATE; CLK_OUT = s; }
+function clkResync() {
+  let y; try { y = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
+  if (typeof y !== 'number' || !isFinite(y)) return;
+  CLK_RAW = y; CLK_TAU = performance.now() / 1000; clkHardSet(y - OFFSET);
+}
+function clkPredict(tau) { CLK_M += CLK_R * (tau - CLK_TAU); CLK_TAU = tau; }
+function clkCorrect() {
+  let y; try { y = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
+  if (typeof y !== 'number' || !isFinite(y) || y === CLK_RAW) return;
+  CLK_RAW = y;
+  const e = (y - OFFSET) - CLK_M;
+  if (Math.abs(e) > CLK_SEEK_EPS) { clkHardSet(y - OFFSET); return; }
+  CLK_M += CLK_KP * e; CLK_R += CLK_KI * e;
+  const lo = PLAYBACK_RATE * 0.8, hi = PLAYBACK_RATE * 1.2;
+  CLK_R = Math.max(lo, Math.min(hi, CLK_R));
+}
+function frame() {
+  if (YT_READY && SYNCED && IS_PLAYING && SCHED) {
+    const tau = performance.now() / 1000;
+    clkPredict(tau); clkCorrect();
+    let t = CLK_M + LATENCY_LEAD;
+    if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
+    movePlayhead(t); fireFlashes(t);
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Transport FSM ────────────────────────────────────────────────────────────
+function playerState() { return !STARTED ? 'IDLE' : (!SYNCED ? 'PRESYNC' : (IS_PLAYING ? 'PLAYING' : 'PAUSED')); }
+function onTransport() {
+  if (!YT_READY) return;
+  switch (playerState()) {
+    case 'IDLE':    STARTED = true; try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {} YT_PLAYER.playVideo(); break;
+    case 'PRESYNC': SYNCED = true; clkResync(); break;
+    case 'PLAYING': YT_PLAYER.pauseVideo(); break;
+    case 'PAUSED':  YT_PLAYER.playVideo(); break;
+  }
+  refreshTransport();
+}
+function refreshTransport() {
+  const btn = document.getElementById('transport');
+  const s = playerState();
+  btn.textContent = { IDLE: '▶ Play', PRESYNC: '◎ Sync', PLAYING: '⏸ Pause', PAUSED: '▶ Play' }[s];
+  btn.disabled = !YT_READY;
+  btn.classList.toggle('attention', s === 'PRESYNC');
+  document.getElementById('hint').textContent = {
+    IDLE: 'Press Play. After any ad, tap Sync the instant the song starts.',
+    PRESYNC: 'Ad running? Wait/Skip, then tap Sync when the song actually starts.',
+    PLAYING: '', PAUSED: 'Paused.',
+  }[s];
+}
+function setRate(delta) {
+  RATE_IDX = Math.max(0, Math.min(RATES.length - 1, RATE_IDX + delta));
+  PLAYBACK_RATE = RATES[RATE_IDX];
+  try { if (YT_PLAYER) YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {}
+  if (SYNCED) clkResync();
+  document.getElementById('rate').textContent = Math.round(PLAYBACK_RATE * 100) + '%';
+}
+function updateSourceLabel() {
+  const el = document.getElementById('source');
+  if (!el) return;
+  const c = chosenCand();
+  el.textContent = c ? (FEATURE_LABEL[String(c.feature)] || 'Source') : '—';
+  el.disabled = CANDS.length < 2;
+}
+
+// Load whatever video chosenCand() points at — into the existing player if ready,
+// else defer until the IFrame API boots.
+function loadVideo(id) {
+  if (YT_PLAYER && YT_READY) { try { (STARTED ? YT_PLAYER.loadVideoById : YT_PLAYER.cueVideoById).call(YT_PLAYER, id); } catch (_) {} return; }
+  PENDING_VIDEO = id;
+  if (YT_API_LOADED) return;
+  YT_API_LOADED = true;
+  window.onYouTubeIframeAPIReady = function () {
+    YT_PLAYER = new YT.Player('yt', {
+      videoId: PENDING_VIDEO, playerVars: { playsinline: 1, origin: location.origin },
+      events: {
+        onReady: () => { YT_READY = true; refreshTransport(); },
+        onStateChange: (e) => { IS_PLAYING = (e.data === YT.PlayerState.PLAYING); if (IS_PLAYING && SYNCED) clkResync(); refreshTransport(); },
+        onError: () => tryNextSource(),   // 101/150 = embedding disabled (e.g. official video) → next candidate
+      },
+    });
+  };
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+}
+
+// (Re)build the time map for the currently chosen candidate.
+function applyCandidate(score) {
+  SCHED = buildSecondsAt(score, chosenCand());
+  OFFSET = SCHED ? SCHED.offset : 0;
+  if (SCHED && MODEL && MODEL.playCells) refreshPlaybackCells();   // re-derive onset secs + bar anchors
+  updateSourceLabel();
+}
+
+// Move to a different candidate video (manual cycle or auto-fallback on error).
+function switchTo(idx, score) {
+  CAND_IDX = idx;
+  applyCandidate(score);
+  if (!chosenCand()) return;
+  try { (STARTED ? YT_PLAYER.loadVideoById : YT_PLAYER.cueVideoById).call(YT_PLAYER, chosenCand().video_id); } catch (_) {}
+  refreshTransport();
+}
+function tryNextSource() {
+  if (CAND_IDX >= CANDS.length - 1) { const h = document.getElementById('hint'); if (h) h.textContent = 'No embeddable video found for this song.'; return; }
+  switchTo(CAND_IDX + 1, LAST_SCORE);
+}
+function cycleSource() { if (CANDS.length > 1) switchTo((CAND_IDX + 1) % CANDS.length, LAST_SCORE); }
+
+// Wire one song's candidates + reset the transport. Hides the player if the song
+// has no usable sync. Defaults to an embeddable cover/backing (not the official).
+function setupSync(score) {
+  CANDS = orderedCandidates(score); CAND_IDX = 0;
+  STARTED = false; SYNCED = false; IS_PLAYING = false;
+  CLK_M = 0; CLK_R = PLAYBACK_RATE; CLK_OUT = 0; CLK_RAW = NaN;
+  FLASH_IDX = 0; LAST_FLASH_T = -1; _xHint = 0;
+  const player = document.getElementById('player');
+  document.getElementById('playhead').style.display = 'none';
+  if (!CANDS.length) { SCHED = null; player.hidden = true; return; }
+  applyCandidate(score);
+  if (!SCHED) { player.hidden = true; return; }
+  player.hidden = false;
+  loadVideo(chosenCand().video_id);
+  refreshTransport();
+}
+
+// ── Score loading (each score_*.js assigns window.SCORE) ──────────────────────
+function loadScore(id) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `../vexflow/score_${id}.js?cb=${id}`;
+    s.onload = () => resolve(window.SCORE);
+    s.onerror = () => reject(new Error('failed to load ' + id));
+    document.body.appendChild(s);
+  });
+}
+
+async function selectSong(id) {
+  const score = await loadScore(id);
+  LAST_SCORE = score;
+  MODEL = buildModel(score);
+  document.getElementById('songSub').textContent =
+    `${score.title} · ${score.artist}${score.drummer ? ' · ' + (''+score.drummer).split('|')[0].trim() : ''}`;
+  // lyrics availability drives the toggle's default + enabled state
+  const has = MODEL.lyrics.length > 0;
+  const btn = document.getElementById('lyrToggle');
+  btn.disabled = !has;
+  btn.style.opacity = has ? '' : '.4';
+  document.body.classList.toggle('lyr-off', !has);
+  btn.classList.toggle('on', has);
+  setupSync(score);          // build the schedule + load the video BEFORE draw (draw reads SCHED)
+  draw();
+  scrollToFirstHit();
+}
+
+// ── Wire-up ──────────────────────────────────────────────────────────────────
+function init() {
+  const sel = document.getElementById('songSel');
+  for (const [id, label] of CATALOG) {
+    const o = document.createElement('option'); o.value = id; o.textContent = label; sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => selectSong(sel.value));
+
+  document.getElementById('themeSeg').addEventListener('click', e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    THEME = btn.dataset.theme;
+    document.body.className = 'theme-' + THEME;
+    document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('on', b === btn));
+    if (MODEL) draw();
+  });
+
+  document.getElementById('lyrToggle').addEventListener('click', e => {
+    const off = document.body.classList.toggle('lyr-off');
+    e.currentTarget.classList.toggle('on', !off);
+  });
+
+  document.getElementById('allToggle').addEventListener('click', e => {
+    SHOW_ALL = !SHOW_ALL;
+    e.currentTarget.classList.toggle('on', SHOW_ALL);
+    if (LAST_SCORE) { MODEL = buildModel(LAST_SCORE); draw(); scrollToFirstHit(); }
+  });
+
+  const grid = document.getElementById('grid');
+  const screen = () => Math.max(200, grid.clientWidth - 40);
+  document.getElementById('prev').addEventListener('click', () => grid.scrollBy({ left: -screen(), behavior: 'smooth' }));
+  document.getElementById('next').addEventListener('click', () => grid.scrollBy({ left:  screen(), behavior: 'smooth' }));
+
+  // keep ruler scroll synced to grid scroll + refresh the bar readout
+  grid.addEventListener('scroll', () => {
+    document.getElementById('ruler').scrollLeft = grid.scrollLeft;
+    if (MODEL) updatePos();
+  });
+
+  // transport + speed, then start the (always-on) sync frame loop
+  document.getElementById('transport').addEventListener('click', onTransport);
+  document.getElementById('source').addEventListener('click', cycleSource);
+  document.getElementById('slower').addEventListener('click', () => setRate(-1));
+  document.getElementById('faster').addEventListener('click', () => setRate(+1));
+  requestAnimationFrame(frame);
+
+  // URL params for deep-linking / screenshots: ?song=31_6&theme=neon
+  const q = new URLSearchParams(location.search);
+  const qt = q.get('theme');
+  if (qt && THEMES[qt]) {
+    THEME = qt;
+    document.body.className = 'theme-' + qt;
+    document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('on', b.dataset.theme === qt));
+  }
+  if (q.get('all') === '1') {
+    SHOW_ALL = true;
+    document.getElementById('allToggle').classList.add('on');
+  }
+  const qs = q.get('song');
+  const startId = (qs && CATALOG.some(c => c[0] === qs)) ? qs : CATALOG[0][0];
+  sel.value = startId;
+  selectSong(startId).then(() => {
+    const qbar = parseInt(q.get('bar'));
+    if (qbar > 0) {
+      const g = geom(), { lefts } = barLefts(MODEL, g);
+      grid.scrollLeft = Math.max(0, (lefts[qbar - 1] ?? 0) - g.mg - g.bl);
+      document.getElementById('ruler').scrollLeft = grid.scrollLeft;
+      updatePos();
+    }
+  });
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

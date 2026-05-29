@@ -8,9 +8,11 @@
     :root {
       --bg: #0f1115;
       --panel: #1a1d24;
+      --panel-hi: #252932;
       --fg: #e6e6e6;
       --muted: #9aa0a6;
       --accent: #ffb454;
+      --hair: #2a2e37;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -18,90 +20,128 @@
       background: var(--bg);
       color: var(--fg);
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
       min-height: 100vh;
       padding: 32px 16px;
     }
     .layout { max-width: 720px; margin: 0 auto; }
-    h1 {
-      font-size: 24px; font-weight: 600; margin: 0 0 4px 0;
-      letter-spacing: -0.01em;
+    h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px 0; letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+
+    /* ── Renderer chooser ─────────────────────────────────────── */
+    .chooser {
+      display: flex; gap: 6px; padding: 5px;
+      background: var(--panel); border: 1px solid var(--hair);
+      border-radius: 12px;
     }
-    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
-    h2 {
-      font-size: 14px; font-weight: 500; color: var(--muted);
-      letter-spacing: 0.04em; text-transform: uppercase;
-      margin: 28px 0 8px 0;
+    .chooser button {
+      flex: 1; appearance: none; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600;
+      color: var(--muted); background: transparent;
+      border: 0; border-radius: 8px; padding: 10px 8px;
+      transition: background .12s, color .12s;
     }
+    .chooser button:hover { color: var(--fg); }
+    .chooser button.on { background: var(--accent); color: #1a1205; }
+    .desc {
+      color: var(--muted); font-size: 13px; line-height: 1.45;
+      margin: 12px 2px 22px 2px; min-height: 19px;
+    }
+
+    /* ── Song list (rendered once; links retarget on choice) ──── */
     ul.songs { list-style: none; margin: 0; padding: 0; }
-    ul.songs li { margin: 0; }
     ul.songs a {
-      display: block;
-      padding: 12px 16px;
-      background: var(--panel);
-      color: var(--fg);
-      text-decoration: none;
-      border-radius: 6px;
-      margin-bottom: 4px;
-      transition: background 0.1s;
+      display: flex; align-items: baseline; gap: 0;
+      padding: 13px 16px; background: var(--panel); color: var(--fg);
+      text-decoration: none; border-radius: 8px; margin-bottom: 5px;
+      transition: background .1s, transform .05s;
     }
-    ul.songs a:hover { background: #252932; }
-    ul.songs .artist { color: var(--accent); font-weight: 500; }
-    ul.songs .dash { color: var(--muted); }
+    ul.songs a:hover { background: var(--panel-hi); }
+    ul.songs a:active { transform: scale(.997); }
+    ul.songs .artist { color: var(--accent); font-weight: 600; }
+    ul.songs .dash { color: var(--muted); padding: 0 6px; }
     ul.songs .title { color: var(--fg); }
-    ul.songs .tag { color: var(--muted); font-size: 12px; }
-    .divider { border: none; border-top: 1px solid #2a2e37; margin: 28px 0; }
-    .empty { color: var(--muted); }
-    code {
-      background: var(--panel);
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: ui-monospace, "SF Mono", Consolas, monospace;
-      font-size: 12px;
-    }
-    .footer {
-      margin-top: 40px;
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
-    }
+    ul.songs .go { margin-left: auto; color: var(--muted); font-size: 13px; opacity: .7; }
+
+    .footer { margin-top: 36px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
+    .footer a { color: var(--muted); }
   </style>
 </head>
 <body>
   <div class="layout">
     <h1>Drum scores</h1>
-    <div class="subtitle">Drum scores synced to original songs and backing tracks on YouTube, plus real drum samples. Tap a song.</div>
-    <h2>VexFlow renderer — live cursor</h2>
-    <ul class="songs">
-      <li><a href="vexflow/player.html?song=412647_8"><span class="artist">Ghost</span><span class="dash"> — </span><span class="title">Square Hammer</span></a></li>
-      <li><a href="vexflow/player.html?song=19_8"><span class="artist">Metallica</span><span class="dash"> — </span><span class="title">Enter Sandman</span></a></li>
-      <li><a href="vexflow/player.html?song=14_6"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Come As You Are</span></a></li>
-      <li><a href="vexflow/player.html?song=31_6"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Heart-Shaped Box</span></a></li>
-      <li><a href="vexflow/player.html?song=295_5"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">In Bloom</span></a></li>
-      <li><a href="vexflow/player.html?song=269_5"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Smells Like Teen Spirit</span></a></li>
-      <li><a href="vexflow/player.html?song=16093_3"><span class="artist">Pixies</span><span class="dash"> — </span><span class="title">Wave Of Mutilation</span></a></li>
-      <li><a href="vexflow/player.html?song=97_6"><span class="artist">Radiohead</span><span class="dash"> — </span><span class="title">Creep</span></a></li>
-      <li><a href="vexflow/player.html?song=89089_8"><span class="artist">Survivor</span><span class="dash"> — </span><span class="title">Eye Of The Tiger</span></a></li>
-      <li><a href="vexflow/player.html?song=431_5"><span class="artist">The Cranberries</span><span class="dash"> — </span><span class="title">Zombie</span></a></li>
-    </ul>
+    <div class="subtitle">Songs synced to YouTube with real drum samples. Pick how you'd like to read them, then choose a song.</div>
 
-    <hr class="divider">
+    <div class="chooser" id="chooser" role="tablist" aria-label="Rendering method">
+      <button data-r="vexflow"    role="tab">VexFlow</button>
+      <button data-r="garageband" role="tab">GarageBand</button>
+      <button data-r="lilypond"   role="tab">LilyPond</button>
+    </div>
+    <div class="desc" id="desc"></div>
 
-    <h2>LilyPond scores</h2>
-    <ul class="songs">
-      <li><a href="songs/ghost-square-hammer.html"><span class="artist">Ghost</span><span class="dash"> — </span><span class="title">Square Hammer</span></a></li>
-      <li><a href="songs/metallica-enter-sandman.html"><span class="artist">Metallica</span><span class="dash"> — </span><span class="title">Enter Sandman</span></a></li>
-      <li><a href="songs/nirvana-come-as-you-are.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Come As You Are</span></a></li>
-      <li><a href="songs/nirvana-heart-shaped-box.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Heart-Shaped Box</span></a></li>
-      <li><a href="songs/nirvana-in-bloom.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">In Bloom</span></a></li>
-      <li><a href="songs/nirvana-smells-like-teen-spirit.html"><span class="artist">Nirvana</span><span class="dash"> — </span><span class="title">Smells Like Teen Spirit</span></a></li>
-      <li><a href="songs/pixies-wave-of-mutilation.html"><span class="artist">Pixies</span><span class="dash"> — </span><span class="title">Wave Of Mutilation</span></a></li>
-      <li><a href="songs/radiohead-creep.html"><span class="artist">Radiohead</span><span class="dash"> — </span><span class="title">Creep</span></a></li>
-      <li><a href="songs/survivor-eye-of-the-tiger.html"><span class="artist">Survivor</span><span class="dash"> — </span><span class="title">Eye Of The Tiger</span></a></li>
-      <li><a href="songs/the-cranberries-zombie.html"><span class="artist">The Cranberries</span><span class="dash"> — </span><span class="title">Zombie</span></a></li>
-    </ul>
+    <ul class="songs" id="songs"></ul>
+
     <div class="footer">
-      Engraving: VexFlow &amp; LilyPond. Audio: CC0 drum samples (Virtuosity Drums) via Tone.js.
+      Engraving: VexFlow &amp; LilyPond · Beat grid inspired by GarageBand · Audio: CC0 drum samples (Virtuosity Drums) via Tone.js.
     </div>
   </div>
+
+<script>
+// Each song once. id → VexFlow/GarageBand (?song=id); slug → LilyPond page.
+const SONGS = [
+  { id: '412647_8', slug: 'ghost-square-hammer',            artist: 'Ghost',          title: 'Square Hammer' },
+  { id: '19_8',     slug: 'metallica-enter-sandman',        artist: 'Metallica',      title: 'Enter Sandman' },
+  { id: '14_6',     slug: 'nirvana-come-as-you-are',        artist: 'Nirvana',        title: 'Come As You Are' },
+  { id: '31_6',     slug: 'nirvana-heart-shaped-box',       artist: 'Nirvana',        title: 'Heart-Shaped Box' },
+  { id: '295_5',    slug: 'nirvana-in-bloom',               artist: 'Nirvana',        title: 'In Bloom' },
+  { id: '269_5',    slug: 'nirvana-smells-like-teen-spirit',artist: 'Nirvana',        title: 'Smells Like Teen Spirit' },
+  { id: '16093_3',  slug: 'pixies-wave-of-mutilation',      artist: 'Pixies',         title: 'Wave Of Mutilation' },
+  { id: '97_6',     slug: 'radiohead-creep',                artist: 'Radiohead',      title: 'Creep' },
+  { id: '89089_8',  slug: 'survivor-eye-of-the-tiger',      artist: 'Survivor',       title: 'Eye Of The Tiger' },
+  { id: '431_5',    slug: 'the-cranberries-zombie',         artist: 'The Cranberries',title: 'Zombie' },
+];
+
+const RENDERERS = {
+  vexflow: {
+    label: 'VexFlow',
+    desc: 'Engraved staff notation with a live green cursor that follows the YouTube audio.',
+    href: s => `vexflow/player.html?song=${s.id}`,
+  },
+  garageband: {
+    label: 'GarageBand',
+    desc: 'A colorful step grid — one row per kit piece — that lights up in time with the music.',
+    href: s => `garageband/index.html?song=${s.id}`,
+  },
+  lilypond: {
+    label: 'LilyPond',
+    desc: 'Publication-quality engraved sheet music with lyrics (static pages).',
+    href: s => `songs/${s.slug}.html`,
+  },
+};
+
+const KEY = 'drumScores.renderer';
+let current = localStorage.getItem(KEY);
+if (!RENDERERS[current]) current = 'vexflow';
+
+const songsEl = document.getElementById('songs');
+songsEl.innerHTML = SONGS.map(s =>
+  `<li><a data-song><span class="artist">${s.artist}</span><span class="dash">—</span><span class="title">${s.title}</span><span class="go">›</span></a></li>`
+).join('');
+const anchors = [...songsEl.querySelectorAll('a[data-song]')];
+
+function apply(r) {
+  current = r;
+  localStorage.setItem(KEY, r);
+  document.querySelectorAll('#chooser button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
+  document.getElementById('desc').textContent = RENDERERS[r].desc;
+  anchors.forEach((a, i) => { a.href = RENDERERS[r].href(SONGS[i]); });
+}
+
+document.getElementById('chooser').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (btn) apply(btn.dataset.r);
+});
+
+apply(current);
+</script>
 </body>
 </html>
