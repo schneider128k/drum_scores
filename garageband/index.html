@@ -693,14 +693,18 @@ let SYNCED = false, STARTED = false;     // transport FSM: IDLE→PRESYNC→PLAY
 let YT_API_LOADED = false, PENDING_VIDEO = null;
 let CANDS = [], CAND_IDX = 0;            // playable video candidates for the current song
 
-// Human-friendly source labels. The official video (feature null) is listed LAST
-// and is usually NOT embeddable (rights holder blocks it → "Watch on YouTube"),
-// so we default to an embeddable cover/backing and fall back further on error.
+// Human-friendly source labels. We default to the ORIGINAL video (the score's
+// youtube_id); if the rights holder blocks embedding ("Watch on YouTube"),
+// onError auto-falls back to a cover/backing. The Source button cycles manually.
 const FEATURE_LABEL = { backing: 'Backing', alternative: 'Cover', solo: 'Solo',
                         playthrough: 'Play-through', drums: 'Drums', null: 'Original' };
 function orderedCandidates(score) {
   const all = (score.youtube_candidates || []).filter(c => c.points && c.points.length >= 2);
-  const rank = c => c.feature == null ? 3 : (c.feature === 'backing' ? 0 : (c.feature === 'alternative' ? 1 : 2));
+  // original first, then embeddable covers/backing as fallbacks
+  const rank = c => c.video_id === score.youtube_id ? -2
+                  : c.feature == null ? -1
+                  : c.feature === 'backing' ? 0
+                  : c.feature === 'alternative' ? 1 : 2;
   return all.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map(x => x.c);
 }
 function chosenCand() { return CANDS[CAND_IDX] || null; }
@@ -895,7 +899,7 @@ function loadVideo(id) {
       events: {
         onReady: () => { YT_READY = true; refreshTransport(); },
         onStateChange: (e) => { IS_PLAYING = (e.data === YT.PlayerState.PLAYING); if (IS_PLAYING && SYNCED) clkResync(); refreshTransport(); },
-        onError: () => tryNextSource(),   // 101/150 = embedding disabled (e.g. official video) → next candidate
+        onError: (e) => { if ([100, 101, 150].includes(e && e.data)) tryNextSource(); },  // removed/private/embed-disabled → next candidate (transient errors keep the Original)
       },
     });
   };
@@ -927,7 +931,8 @@ function tryNextSource() {
 function cycleSource() { if (CANDS.length > 1) switchTo((CAND_IDX + 1) % CANDS.length, LAST_SCORE); }
 
 // Wire one song's candidates + reset the transport. Hides the player if the song
-// has no usable sync. Defaults to an embeddable cover/backing (not the official).
+// has no usable sync. Defaults to the ORIGINAL video (auto-falls back on an
+// embedding error).
 function setupSync(score) {
   CANDS = orderedCandidates(score); CAND_IDX = 0;
   STARTED = false; SYNCED = false; IS_PLAYING = false;
