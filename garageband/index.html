@@ -510,7 +510,9 @@ function buildModel(score) {
           const lid = LILY2LANE[n.lily]; if (!lid) continue;
           const key = `${lid}|${mi}|${bi}|${sc}`;
           const prev = hits.get(key);
-          const cur = { vel, accent: !!n.accent, ghost: !!n.ghost };
+          // pos = the note's ACTUAL onset (whole-notes), kept for sample-accurate
+          // flash timing — independent of the cell's quantised grid position.
+          const cur = { vel, accent: !!n.accent, ghost: !!n.ghost, pos: F(ev.position) };
           // if two notes share a cell, keep the louder/accented
           if (!prev || cur.accent || cur.vel > prev.vel) hits.set(key, cur);
         }
@@ -594,8 +596,6 @@ function renderGrid(model, bars) {
     const track = document.createElement('div');
     track.className = 'track';
     for (const b of bars) {
-      const m = model.measures[b.mi];
-      const mPos = F(m.position), beatWhole = 1 / m.time_sig[1];
       const meas = document.createElement('div');
       meas.className = 'meas';
       for (let bi = 0; bi < b.nBeats; bi++) {
@@ -609,7 +609,7 @@ function renderGrid(model, bars) {
           if (hit) {
             cell.classList.add('hit');
             cell.setAttribute('style', cellStyle(lane.hue, hit.vel, hit.accent, hit.ghost));
-            model.playCells.push({ posWhole: mPos + bi * beatWhole + sc * beatWhole / sub, el: cell });
+            model.playCells.push({ posWhole: hit.pos, el: cell });   // flash at the note's true onset
           }
           beat.appendChild(cell);
         }
