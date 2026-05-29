@@ -39,6 +39,12 @@ let SYNCED = false;           // the PRESYNC gate: the bar stays parked at beat 
                               // The YT IFrame API can't tell us a preroll ad is playing (getCurrentTime/
                               // getVideoData return the MAIN video during the ad), so a human taps Sync once
                               // the song is actually playing — same two-step UX as the deployed player.
+let STARTED = false;          // has the video been told to play at least once (IDLE vs PRESYNC)
+const RATES = [0.25, 0.5, 0.75, 1];   // YouTube-supported learning speeds
+let RATE_IDX = RATES.length - 1;      // start at 100%
+let PLAYBACK_RATE = 1;        // scales the between-sample cursor advance (0.5× audio ⇒ half real-time)
+let MEASURE_TIMELINE = [];    // [{sec, idx, marker}] per measure downbeat — drives the status line
+let SCORE_REF = null;         // kept so a resize can re-render responsively
 let LAST_SAMPLE_SCORESEC = 0; // score-seconds at the last getCurrentTime() poll
 let LAST_SAMPLE_PERF = 0;     // performance.now()/1000 at that poll; we interpolate between polls
 let ACTIVE_ROW = -1;
@@ -151,6 +157,7 @@ const fLT  = (a, b) => a[0] * b[1] <  b[0] * a[1];
 const fLE  = (a, b) => a[0] * b[1] <= b[0] * a[1];
 const fSub = (a, b) => reduce(a[0] * b[1] - b[0] * a[1], a[1] * b[1]);
 const fAdd = (a, b) => reduce(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
+const fMul = (a, b) => reduce(a[0] * b[0], a[1] * b[1]);
 
 function lookupDur(frac) {
   for (const [f, vd, dots] of DUR_TABLE) {
@@ -215,90 +222,158 @@ function largestDurLE(gap) {
 //
 // Each returned StaveNote is tagged with `__accent` (0/1/2) so the row renderer
 // can draw accent marks in a single uniform band above the staff.
+// Returns { tickables: [StaveNote...], tuplets: [{notes, num_notes, notes_occupied,
+// bracketed}] }. Tuplets are kept out of the stretch model: their members render
+// at the written duration (actual × N/M, mirroring emitter.py's `\tuplet N/M`)
+// and are wrapped in a VF.Tuplet so VexFlow draws the bracket/"3" and reduces the
+// spacing. Everything else still stretches to the next event to collapse the
+// tick-grid rest noise into clean hits.
 function buildMeasureTickables(measure) {
-  const filtered = [];
-  for (const ev of measure.events) {
-    if (!(ev.notes && ev.notes.length)) continue;
-    filtered.push({ relPos: fSub(ev.position, measure.position), notes: ev.notes });
-  }
-  if (filtered.length === 0) return [];
+  const mPos = measure.position;
 
-  filtered.sort((a, b) => (a.relPos[0] * b.relPos[1]) - (b.relPos[0] * a.relPos[1]));
+  // Partition events: tuplet members (grouped by tuplet_group, rests kept — they
+  // fill the bracket) vs plain note events (stretched).
+  const groups = new Map();   // gid -> { members:[{rel,ev}], n, m }
+  const plain = [];           // [{rel, notes}]
+  for (const ev of measure.events) {
+    const rel = fSub(ev.position, mPos);
+    if (ev.tuplet_group != null) {
+      let g = groups.get(ev.tuplet_group);
+      if (!g) { g = { members: [], n: ev.tuplet_n, m: ev.tuplet_m }; groups.set(ev.tuplet_group, g); }
+      g.members.push({ rel, ev });
+    } else if (ev.notes && ev.notes.length) {
+      plain.push({ rel, notes: ev.notes });
+    }
+  }
+  if (plain.length === 0 && groups.size === 0) return { tickables: [], tuplets: [] };
+
+  // One timeline anchor per plain note (instantaneous) and per tuplet group
+  // (spans its summed actual duration). Sorted, they drive the stretch walk.
+  const anchors = plain.map(p => ({ kind: 'note', rel: p.rel, notes: p.notes }));
+  for (const [gid, g] of groups) {
+    g.members.sort((a, b) => a.rel[0] * b.rel[1] - b.rel[0] * a.rel[1]);
+    let dur = [0, 1];
+    for (const mem of g.members) dur = fAdd(dur, mem.ev.duration);
+    anchors.push({ kind: 'tuplet', rel: g.members[0].rel, dur, gid, group: g });
+  }
+  anchors.sort((a, b) => a.rel[0] * b.rel[1] - b.rel[0] * a.rel[1]);
 
   const tokens = [];
   let cursor = [0, 1];
-
-  // Lead-in rest if the first event isn't at the bar line.
-  if (fLT(cursor, filtered[0].relPos)) {
-    for (const [vd, d] of fillRests(fSub(filtered[0].relPos, cursor))) {
-      tokens.push({ type: 'rest', dur: vd, dots: d });
-    }
-    cursor = filtered[0].relPos;
+  if (fLT(cursor, anchors[0].rel)) {
+    for (const [vd, d] of fillRests(fSub(anchors[0].rel, cursor))) tokens.push({ type: 'rest', dur: vd, dots: d });
+    cursor = anchors[0].rel;
   }
 
-  for (let i = 0; i < filtered.length; i++) {
-    const ev = filtered[i];
-    const nextPos = (i + 1 < filtered.length) ? filtered[i + 1].relPos : measure.duration;
-    const gap = fSub(nextPos, ev.relPos);
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const nextPos = (i + 1 < anchors.length) ? anchors[i + 1].rel : measure.duration;
+
+    if (a.kind === 'tuplet') {
+      const g = a.group;
+      for (const mem of g.members) {
+        const written = fMul(mem.ev.duration, [g.n, g.m]);   // displayed note value
+        let vd, dots;
+        const ld = lookupDur(written);
+        if (ld) { vd = ld[0]; dots = ld[1]; }
+        else { const fb = largestDurLE(written); if (!fb) continue; vd = fb[1]; dots = fb[2]; }
+        const hasNotes = mem.ev.notes && mem.ev.notes.length;
+        tokens.push({
+          type: hasNotes ? 'note' : 'rest',
+          dur: vd, dots,
+          notes: hasNotes ? mem.ev.notes : null,
+          relpos: mem.rel,
+          tupId: a.gid,
+        });
+      }
+      cursor = fAdd(a.rel, a.dur);
+      if (fLT(cursor, nextPos)) {
+        for (const [rd, rdots] of fillRests(fSub(nextPos, cursor))) tokens.push({ type: 'rest', dur: rd, dots: rdots });
+        cursor = nextPos;
+      }
+      continue;
+    }
+
+    // Plain note: stretch to the next anchor.
+    const gap = fSub(nextPos, a.rel);
     const exact = lookupDur(gap);
     if (exact) {
-      tokens.push({ type: 'note', dur: exact[0], dots: exact[1], notes: ev.notes, relpos: ev.relPos });
+      tokens.push({ type: 'note', dur: exact[0], dots: exact[1], notes: a.notes, relpos: a.rel });
       cursor = nextPos;
       continue;
     }
-    // Non-standard gap (e.g. 5/16): take the largest standard duration that fits,
-    // then pad the remainder with rests.
     const fallback = largestDurLE(gap);
     if (!fallback) { cursor = nextPos; continue; }
     const [f, vd, dots] = fallback;
-    tokens.push({ type: 'note', dur: vd, dots, notes: ev.notes, relpos: ev.relPos });
-    cursor = fAdd(ev.relPos, f);
+    tokens.push({ type: 'note', dur: vd, dots, notes: a.notes, relpos: a.rel });
+    cursor = fAdd(a.rel, f);
     if (fLT(cursor, nextPos)) {
-      for (const [rd, rdots] of fillRests(fSub(nextPos, cursor))) {
-        tokens.push({ type: 'rest', dur: rd, dots: rdots });
-      }
+      for (const [rd, rdots] of fillRests(fSub(nextPos, cursor))) tokens.push({ type: 'rest', dur: rd, dots: rdots });
       cursor = nextPos;
     }
   }
 
-  return tokens.map(t => {
+  // Materialize tokens → StaveNotes, bucketing tuplet members in order.
+  const tickables = [];
+  const buckets = new Map();   // tupId -> [StaveNote...]
+  for (const t of tokens) {
+    let n;
     if (t.type === 'rest') {
-      const n = new VF.StaveNote({ keys: ['b/4'], duration: t.dur + 'r' });
-      for (let i = 0; i < t.dots; i++) VF.Dot.buildAndAttach([n], { all: true });
+      n = new VF.StaveNote({ keys: ['b/4'], duration: t.dur + 'r' });
+      for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
       n.__accent = 0;
-      return n;
-    }
-    const chord = chordFromNotes(t.notes);
-    const keys = chord.map(c => c.key);
-    const n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: -1 });
-    for (let i = 0; i < t.dots; i++) VF.Dot.buildAndAttach([n], { all: true });
+    } else {
+      const chord = chordFromNotes(t.notes);
+      const keys = chord.map(c => c.key);
+      n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: -1 });
+      for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
 
-    // Ghost notes: parenthesize that specific notehead. Accent: remember the
-    // strongest in the chord; the mark itself is drawn later as a top band.
-    let maxAccent = 0;
-    chord.forEach((c, j) => {
-      if (c.dn.ghost) {
-        n.addModifier(new VF.Parenthesis(VF.ModifierPosition.LEFT), j);
-        n.addModifier(new VF.Parenthesis(VF.ModifierPosition.RIGHT), j);
-      }
-      if (c.dn.accent > maxAccent) maxAccent = c.dn.accent;
-    });
-    n.__accent = maxAccent;
-    n.__posf = t.relpos[0] / t.relpos[1];   // position within measure, for lyric alignment
-    n.__abspos = measure.position[0] / measure.position[1] + n.__posf;  // absolute score position (whole-notes), for the playback cursor
-    return n;
-  });
+      // Ghost notes parenthesize that notehead; accent = strongest in the chord
+      // (drawn later as a uniform top band).
+      let maxAccent = 0;
+      chord.forEach((c, j) => {
+        if (c.dn.ghost) {
+          n.addModifier(new VF.Parenthesis(VF.ModifierPosition.LEFT), j);
+          n.addModifier(new VF.Parenthesis(VF.ModifierPosition.RIGHT), j);
+        }
+        if (c.dn.accent > maxAccent) maxAccent = c.dn.accent;
+      });
+      n.__accent = maxAccent;
+      n.__posf = t.relpos[0] / t.relpos[1];
+      n.__abspos = mPos[0] / mPos[1] + n.__posf;
+    }
+    tickables.push(n);
+    if (t.tupId != null) {
+      n.__tuplet = true;   // beamed as its own group, excluded from the general beamer
+      if (!buckets.has(t.tupId)) buckets.set(t.tupId, []);
+      buckets.get(t.tupId).push(n);
+    }
+  }
+
+  // A tuplet's bracket shows only when its notes can't be beamed (quarter or
+  // longer); beamed 8th/16th triplets just carry the "3", like Songsterr.
+  const beamable = new Set(['8', '16', '32', '64']);
+  const tuplets = [];
+  for (const [gid, notes] of buckets) {
+    const g = groups.get(gid);
+    const bracketed = notes.some(n => !beamable.has(n.getDuration && n.getDuration()));
+    tuplets.push({ notes, num_notes: g.n, notes_occupied: g.m, bracketed });
+  }
+  return { tickables, tuplets };
 }
 
 const ROW_HEIGHT = 215;
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
-const PAGE_WIDTH = 1100;
+const PAGE_WIDTH = 1100;     // fallback width when the container hasn't laid out yet
+const MIN_PAGE_WIDTH = 360;  // floor so a tiny window still renders something legible
+const CLEF_W = 70;           // width the clef + time signature eat on the first row
+const MAX_BARS_PER_ROW = 4;  // ceiling; the greedy breaker uses fewer when they don't fit
 const SIDE_MARGIN = 10;
 const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
 const LYRIC_COLOR = '#7a7a7a';
-const LYRIC_FONT = ['Arial', 11, 'normal'];
+const LYRIC_FONT = ['Arial', 9, 'normal'];   // smaller, like Songsterr — also lightens the width it reserves, so lyrics pull the note spacing less
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
 
 // Songsterr palette: the note heads are the only dark element; everything else
@@ -409,32 +484,45 @@ function drawRowLyrics(ctx, y, items) {
   ctx.restore();
 }
 
-function renderRow(measures, rowIdx, container, lyrics) {
+// Build one measure's renderables once (tickables, voice, tuplets, min width).
+// Pulled out of renderRow so the score can be measured for line-breaking before
+// any row is laid out. Tuplet objects are created here (not at draw time) so
+// VF.Tuplet's tick reduction is already in effect for the width precalc.
+function buildMeasure(m, lyrics) {
+  const { tickables: notes, tuplets: tupletSpecs } = buildMeasureTickables(m);
+  let voice = null, minW = 40;
+  const tuplets = [];
+  if (notes.length) {
+    // Attach lyrics first so their width feeds into the min-width estimate —
+    // lyric-heavy bars then get proportionally wider, like Songsterr.
+    attachLyrics(notes, m, lyrics);
+    for (const t of tupletSpecs) {
+      try {
+        tuplets.push(new VF.Tuplet(t.notes, {
+          num_notes: t.num_notes, notes_occupied: t.notes_occupied,
+          bracketed: t.bracketed, ratioed: false, location: VF.Tuplet.LOCATION_TOP,
+        }));
+      } catch (e) { console.warn('tuplet failed m', m.index, e); }
+    }
+    voice = new VF.Voice({ num_beats: m.time_sig[0], beat_value: m.time_sig[1] });
+    voice.setStrict(false).addTickables(notes);
+    try {
+      minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
+    } catch (e) { console.warn('minwidth failed m', m.index, e); }
+  }
+  return { m, notes, voice, minW, tuplets };
+}
+
+// Lay out and draw one row of pre-built measures into `container`, sized to
+// `pageWidth`. Each bar's width = its min width × a single row-wide scale, so
+// all bars stretch by the same factor and fill the row (Songsterr's even look).
+function renderRow(built, rowIdx, container, pageWidth) {
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
-  renderer.resize(PAGE_WIDTH, ROW_HEIGHT);
+  renderer.resize(pageWidth, ROW_HEIGHT);
   const ctx = renderer.getContext();
 
-  const clefWidth = isFirstRow(rowIdx) ? 70 : 0;
-  const availWidth = PAGE_WIDTH - SIDE_MARGIN * 2 - clefWidth;
-
-  // Build every bar's notes up front so we can size each bar by the space its
-  // notes actually need (note-value proportional), then stretch them all by the
-  // same factor to fill the row. This is what gives Songsterr its even look.
-  const built = measures.map(m => {
-    const notes = buildMeasureTickables(m);
-    let voice = null, minW = 40;
-    if (notes.length) {
-      // Attach lyrics first so their width feeds into the min-width estimate —
-      // lyric-heavy bars then get proportionally wider, like Songsterr.
-      attachLyrics(notes, m, lyrics);
-      voice = new VF.Voice({ num_beats: m.time_sig[0], beat_value: m.time_sig[1] });
-      voice.setStrict(false).addTickables(notes);
-      try {
-        minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
-      } catch (e) { console.warn('minwidth failed m', m.index, e); }
-    }
-    return { m, notes, voice, minW };
-  });
+  const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
+  const availWidth = pageWidth - SIDE_MARGIN * 2 - clefWidth;
   const minSum = built.reduce((a, b) => a + b.minW, 0) || 1;
   const scale = availWidth / minSum;
 
@@ -453,7 +541,7 @@ function renderRow(measures, rowIdx, container, lyrics) {
 
   let x = SIDE_MARGIN;
   for (let i = 0; i < built.length; i++) {
-    const { m, notes, voice } = built[i];
+    const { m, notes, voice, tuplets } = built[i];
     const myWidth = built[i].minW * scale + (i === 0 ? clefWidth : 0);
     const stave = new VF.Stave(x, ROW_TOP, myWidth);
     // Thin grey staff lines / barlines / clef / measure number.
@@ -494,6 +582,7 @@ function renderRow(measures, rowIdx, container, lyrics) {
 
     if (!voice) continue;
     const noteArea = stave.getNoteEndX() - stave.getNoteStartX();
+    for (const n of notes) { if (n.setStave) n.setStave(stave); }   // so getYs() works below
     try {
       new VF.Formatter().joinVoices([voice]).format([voice], noteArea - 6);
     } catch (e) { console.warn('format failed m', m.index, e); }
@@ -506,14 +595,20 @@ function renderRow(measures, rowIdx, container, lyrics) {
     // at the same height across the row. Full tickable list (rests included) so
     // beams break at rests. Must run before voice.draw — beaming suppresses the
     // individual flags at draw time.
+    const beamOpts = {
+      stem_direction: -1, beam_rests: false, flat_beams: true,
+      flat_beam_offset: stave.getYForLine(4) + BEAM_DROP,
+    };
     let beams = [];
     try {
-      beams = VF.Beam.generateBeams(notes, {
-        stem_direction: -1,
-        beam_rests: false,
-        flat_beams: true,
-        flat_beam_offset: stave.getYForLine(4) + BEAM_DROP,
-      });
+      // Beam the plain notes together; beam each tuplet group on its OWN notes so
+      // a triplet's members beam as a clean unit and never merge with their
+      // neighbours (the stray-flag mess in the first tuplet attempt).
+      beams = VF.Beam.generateBeams(notes.filter(n => !n.__tuplet), beamOpts);
+      for (const tp of tuplets) {
+        beams = beams.concat(
+          VF.Beam.generateBeams(tp.notes.filter(n => !(n.isRest && n.isRest())), beamOpts));
+      }
     } catch (e) { console.warn('beam failed m', m.index, e); }
 
     // Reset the context to dark after the grey stave so note heads stay dark,
@@ -532,6 +627,20 @@ function renderRow(measures, rowIdx, container, lyrics) {
       b.setStyle({ fillStyle: BEAM_COLOR, strokeStyle: BEAM_COLOR });
     }
 
+    // Flat-bottom stems. A non-beamed note (quarter, half, lone hit) gets a
+    // default short stem that stops well above the flat beam line, dangling
+    // disconnected next to the long beamed stems. Extend each one down to that
+    // same line so every stem bottoms out uniformly — the Songsterr look, and
+    // the fix for the "stem that doesn't connect" report.
+    const yFlat = stave.getYForLine(4) + BEAM_DROP;
+    for (const n of notes) {
+      if ((n.isRest && n.isRest()) || (n.hasBeam && n.hasBeam()) || !n.setStemLength) continue;
+      try {
+        const topY = Math.min.apply(null, n.getYs());
+        if (yFlat - topY > 0) n.setStemLength(yFlat - topY);
+      } catch (_) { /* no Y-values — keep the default stem */ }
+    }
+
     voice.draw(ctx, stave);
     for (const b of beams) b.setContext(ctx).draw();
     // The beam repaints the grey stems over the note heads (and beams need the
@@ -544,6 +653,18 @@ function renderRow(measures, rowIdx, container, lyrics) {
       n.drawNoteHeads();
     }
     drawAccentBand(ctx, stave, notes);
+
+    // Tuplet brackets / "3" — drawn last because they read the notes' rendered
+    // Y positions (set by voice.draw). Grey to match the section labels.
+    if (tuplets && tuplets.length) {
+      ctx.save();
+      ctx.setFillStyle(SECTION_COLOR);
+      ctx.setStrokeStyle(SECTION_COLOR);
+      for (const tp of tuplets) {
+        try { tp.setContext(ctx).draw(); } catch (e) { console.warn('tuplet draw m', m.index, e); }
+      }
+      ctx.restore();
+    }
 
     // Collect this bar's lyrics (drawn together afterwards so hyphens can span
     // bar lines) and the per-note cursor anchors (bar lands on each notehead).
@@ -598,23 +719,49 @@ function renderRow(measures, rowIdx, container, lyrics) {
   };
 }
 
-function renderScore(score, container, barsPerRow) {
+function renderScore(score, container) {
   const measures = score.measures;
   const lyrics = score.lyrics || [];
   ROWS = [];
-  for (let i = 0; i < measures.length; i += barsPerRow) {
-    const rowMeasures = measures.slice(i, i + barsPerRow);
+  container.innerHTML = '';
+
+  // Size to the container (the iPad's real width); fall back to PAGE_WIDTH if it
+  // hasn't laid out yet. This is what makes the score fit any screen.
+  const pageWidth = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
+
+  // Build every measure once, then greedily pack measures into rows: at most
+  // MAX_BARS_PER_ROW, and fewer when the next bar wouldn't fit COMFORTABLY.
+  // Packing only to each bar's *minimum* legible width (scale ≈ 1) reads as
+  // crowded, so we require every row to stay at ≥ COMFORT × the minimum — dense
+  // or lyric-heavy bars (and narrow screens) then get fewer per row, with air
+  // around every note, like Songsterr. No manual knob; never wider than screen.
+  const COMFORT = 1.6;
+  const builtAll = measures.map(m => buildMeasure(m, lyrics));
+  const usableFirst = (pageWidth - SIDE_MARGIN * 2 - CLEF_W) / COMFORT;
+  const usableRest = (pageWidth - SIDE_MARGIN * 2) / COMFORT;
+  const rows = [];
+  let cur = [], curW = 0;
+  for (const b of builtAll) {
+    const usable = (rows.length === 0) ? usableFirst : usableRest;
+    if (cur.length && (cur.length >= MAX_BARS_PER_ROW || curW + b.minW > usable)) {
+      rows.push(cur); cur = []; curW = 0;
+    }
+    cur.push(b); curW += b.minW;
+  }
+  if (cur.length) rows.push(cur);
+
+  rows.forEach((rowBuilt, idx) => {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'row';
     container.appendChild(rowDiv);
     try {
-      const rec = renderRow(rowMeasures, i / barsPerRow, rowDiv, lyrics);
+      const rec = renderRow(rowBuilt, idx, rowDiv, pageWidth);
       if (rec) ROWS.push(rec);
     } catch (e) {
       rowDiv.textContent = '[row render error: ' + e.message + ']';
-      console.error('row', i, e);
+      console.error('row', idx, e);
     }
-  }
+  });
 }
 
 // ── Travelling-bar playback (Phase 1) ─────────────────────────────────────────
@@ -665,9 +812,20 @@ function updateBar(t) {
     BAR_RECT.setAttribute('y', row.yTop);
     BAR_RECT.setAttribute('height', row.yBottom - row.yTop);
     ACTIVE_ROW = r;
-    row.div.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    centerRow(row.div);          // teleprompter: keep the active row centred
   }
   BAR_RECT.setAttribute('x', xAtTime(row, t) - BAR_WIDTH / 2);
+}
+
+// Teleprompter scroll: keep the active row vertically centred in the space below
+// the sticky header, so the green bar never drops past the middle of the screen.
+function centerRow(div) {
+  const header = document.getElementById('topbar');
+  const headerH = header ? header.getBoundingClientRect().height : 0;
+  const rect = div.getBoundingClientRect();
+  const rowCenterAbs = window.scrollY + rect.top + rect.height / 2;
+  const target = rowCenterAbs - (headerH + (window.innerHeight - headerH) / 2);
+  window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
 }
 
 // getCurrentTime() quantises to ~250 ms, so we sample it sparsely and advance
@@ -681,46 +839,117 @@ function resampleYt(perf) {
 }
 
 function startBarLoop() {
+  let lastStatus = 0;
   const frame = () => {
     // SYNCED gates out the preroll-ad window: until the user taps Sync, the bar
     // stays parked at beat 1 even while the video (or its ad) is playing.
     if (YT_READY && SYNCED && IS_PLAYING) {
       const perf = performance.now() / 1000;
       if (perf - LAST_SAMPLE_PERF > YT_RESAMPLE_SEC) resampleYt(perf);
-      updateBar(LAST_SAMPLE_SCORESEC + (performance.now() / 1000 - LAST_SAMPLE_PERF));
+      // Advance by PLAYBACK_RATE × elapsed: at 0.5× the audio moves at half
+      // real-time, so the cursor must too (the sparse getCurrentTime samples
+      // already reflect the slowed clock; only the interpolation needs scaling).
+      const t = LAST_SAMPLE_SCORESEC + PLAYBACK_RATE * (performance.now() / 1000 - LAST_SAMPLE_PERF);
+      updateBar(t);
+      if (perf - lastStatus > 0.2) { updateStatus(t); lastStatus = perf; }
     }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 }
 
-// The Sync action (mirrors the deployed player's onStartMusic): align the
-// cursor to the video's CURRENT position using the known youtube_offset, so it
-// works no matter how long any preroll ad ran. Re-tappable to realign.
+// ── Transport FSM (YouTube-only; the deployed player's FSM minus sampled drums)
+//   IDLE    ▶ Play  → start the video (a preroll ad may run)         → PRESYNC
+//   PRESYNC ▶ Sync  → align the cursor to the song's current time    → PLAYING
+//   PLAYING ⏸ Pause → pause the video                                → PAUSED
+//   PAUSED  ▶ Play  → resume (the next resample re-aligns the bar)    → PLAYING
+function playerState() {
+  if (!STARTED) return 'IDLE';
+  if (!SYNCED) return 'PRESYNC';
+  return IS_PLAYING ? 'PLAYING' : 'PAUSED';
+}
+
+function onTransport() {
+  if (!YT_READY) return;
+  switch (playerState()) {
+    case 'IDLE':    STARTED = true; try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {} YT_PLAYER.playVideo(); break;
+    case 'PRESYNC': doSync(); break;
+    case 'PLAYING': YT_PLAYER.pauseVideo(); break;
+    case 'PAUSED':  YT_PLAYER.playVideo(); break;
+  }
+  refreshTransport();
+}
+
+function refreshTransport() {
+  const btn = document.getElementById('transport');
+  if (!btn) return;
+  const s = playerState();
+  const labels = { IDLE: '▶ Play', PRESYNC: '▶ Sync', PLAYING: '⏸ Pause', PAUSED: '▶ Play' };
+  const hints = {
+    IDLE: 'Press Play. After any ad, tap Sync the moment the song starts.',
+    PRESYNC: 'Ad running? Wait or Skip — then tap Sync when the song starts.',
+    PLAYING: '',
+    PAUSED: 'Paused.',
+  };
+  btn.textContent = labels[s];
+  btn.disabled = !YT_READY;
+  btn.classList.toggle('attention', s === 'PRESYNC');   // nudge toward Sync
+  const hint = document.getElementById('hint');
+  if (hint) hint.textContent = hints[s];
+}
+
+// Sync (mirrors the deployed player's onStartMusic): align the cursor to the
+// video's CURRENT position via the known youtube_offset, so it's right no matter
+// how long an ad ran. Re-anchoring (here and on resume / speed change) means a
+// mistimed Sync self-corrects within one 250 ms sample.
 function doSync() {
   if (!YT_READY) return;
   SYNCED = true;
   resampleYt(performance.now() / 1000);
-  const msg = document.getElementById('syncmsg');
-  const btn = document.getElementById('syncbtn');
-  if (btn) btn.textContent = 'Re-sync';
-  if (msg) msg.textContent = 'Synced. Tap Re-sync to realign if the bar drifts.';
+  refreshTransport();
+}
+
+function setRate(delta) {
+  RATE_IDX = Math.max(0, Math.min(RATES.length - 1, RATE_IDX + delta));
+  PLAYBACK_RATE = RATES[RATE_IDX];
+  try { if (YT_PLAYER) YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {}
+  if (SYNCED) resampleYt(performance.now() / 1000);   // re-anchor so the bar doesn't lurch
+  const el = document.getElementById('rate');
+  if (el) el.textContent = Math.round(PLAYBACK_RATE * 100) + '%';
+}
+
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function updateStatus(t) {
+  const el = document.getElementById('status');
+  if (!el || !MEASURE_TIMELINE.length) return;
+  let i = 0;
+  while (i < MEASURE_TIMELINE.length - 1 && MEASURE_TIMELINE[i + 1].sec <= t) i++;
+  let section = '';
+  for (let k = i; k >= 0; k--) { if (MEASURE_TIMELINE[k].marker) { section = MEASURE_TIMELINE[k].marker; break; } }
+  let ytNow = t + OFFSET, ytDur = 0;
+  try { ytNow = YT_PLAYER.getCurrentTime(); ytDur = YT_PLAYER.getDuration(); } catch (_) {}
+  const parts = [`Bar ${MEASURE_TIMELINE[i].idx}/${MEASURE_TIMELINE.length}`];
+  if (section) parts.push(section);
+  parts.push(`${fmtTime(ytNow)} / ${fmtTime(ytDur)}`);
+  el.textContent = parts.join('  ·  ');
 }
 
 function initYt(videoId) {
   window.onYouTubeIframeAPIReady = function () {
     YT_PLAYER = new YT.Player('yt', {
-      videoId: videoId, width: 480, height: 270,
+      videoId: videoId, width: 200, height: 112,
       playerVars: { playsinline: 1 },
       events: {
-        onReady: () => {
-          YT_READY = true;
-          const btn = document.getElementById('syncbtn');
-          if (btn) btn.disabled = false;
-        },
+        onReady: () => { YT_READY = true; refreshTransport(); },
         onStateChange: (e) => {
           IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
-          if (IS_PLAYING) resampleYt(performance.now() / 1000);
+          if (IS_PLAYING && SYNCED) resampleYt(performance.now() / 1000);
+          refreshTransport();
         },
       },
     });
@@ -730,33 +959,63 @@ function initYt(videoId) {
   document.head.appendChild(tag);
 }
 
+function wireControls() {
+  const t = document.getElementById('transport');
+  if (t) t.addEventListener('click', onTransport);
+  const slower = document.getElementById('slower');
+  const faster = document.getElementById('faster');
+  if (slower) slower.addEventListener('click', () => setRate(-1));
+  if (faster) faster.addEventListener('click', () => setRate(+1));
+}
+
+function buildMeasureTimeline(score) {
+  MEASURE_TIMELINE = [];
+  if (!SCHED) return;
+  for (const m of score.measures) {
+    MEASURE_TIMELINE.push({ sec: SCHED.at(m.position[0] / m.position[1]), idx: m.index, marker: m.marker || '' });
+  }
+}
+
+let _resizeTimer = null;
+function onResize() {
+  if (!SCORE_REF) return;
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    renderScore(SCORE_REF, document.getElementById('score'));
+    if (SCHED && ROWS.length) makeBar();   // re-attach the bar to the fresh rows
+  }, 200);
+}
+
 function boot() {
   const score = window.SCORE;
   if (!score) {
-    document.getElementById('heading').textContent = 'No window.SCORE — load a score_*.js first.';
+    const h = document.getElementById('heading');
+    if (h) h.textContent = 'No window.SCORE — load a score_*.js first.';
     return;
   }
-  document.title = `${score.artist} — ${score.title} (VexFlow proto)`;
-  document.getElementById('heading').textContent = `${score.artist} — ${score.title}`;
-  document.getElementById('subheading').textContent =
-    `${score.measures.length} measures · ${score.tempo_changes[0]?.bpm ?? '?'} bpm`;
+  SCORE_REF = score;
+  document.title = `${score.artist} — ${score.title}`;
+  const h = document.getElementById('heading');
+  const sh = document.getElementById('subheading');
+  if (h) h.textContent = `${score.artist} — ${score.title}`;
+  if (sh) sh.textContent = `${score.measures.length} bars · ${score.tempo_changes[0]?.bpm ?? '?'} bpm`;
 
-  // Build the timing function before render — renderRow reads SCHED to lay down
-  // the per-note cursor anchors. Null when the score has no usable YouTube sync.
+  // Timing before render — renderRow reads SCHED to lay down the cursor anchors.
   SCHED = buildSecondsAt(score);
   OFFSET = SCHED ? SCHED.offset : 0;
+  buildMeasureTimeline(score);
 
-  const barsPerRow = parseInt(new URLSearchParams(location.search).get('bpr') || '4', 10);
-  renderScore(score, document.getElementById('score'), barsPerRow);
+  renderScore(score, document.getElementById('score'));
 
-  // If we have timing, rows with anchors, and a chosen video, light up the bar.
+  wireControls();
+  window.addEventListener('resize', onResize);
+
   if (SCHED && ROWS.length && score.youtube_id) {
     makeBar();
     initYt(score.youtube_id);
     startBarLoop();
-    const btn = document.getElementById('syncbtn');
-    if (btn) btn.addEventListener('click', doSync);
   }
+  refreshTransport();
 }
 
 if (document.readyState === 'loading') {
