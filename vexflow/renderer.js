@@ -45,15 +45,33 @@ let RATE_IDX = RATES.length - 1;      // start at 100%
 let PLAYBACK_RATE = 1;        // scales the between-sample cursor advance (0.5× audio ⇒ half real-time)
 let MEASURE_TIMELINE = [];    // [{sec, idx, marker}] per measure downbeat — drives the status line
 let SCORE_REF = null;         // kept so a resize can re-render responsively
-let LAST_SAMPLE_SCORESEC = 0; // score-seconds at the last getCurrentTime() poll
-let LAST_SAMPLE_PERF = 0;     // performance.now()/1000 at that poll; we interpolate between polls
+// Cursor clock estimator: a type-2 (PI) tracking loop that fuses the quantised,
+// ~250 ms-stale YouTube getCurrentTime() sensor into a smooth, monotonic media
+// clock. State = phase (estimated score-seconds) + rate (score-sec per
+// wall-sec). We PREDICT every frame from performance.now() and CORRECT only on a
+// genuinely new sensor value. The loop is over-damped, so the phase never
+// overshoots (no backward jump); CLK_OUT is a hard monotonic latch on top. A
+// residual above CLK_SEEK_EPS is a real seek/(re)sync, so we hard-set there.
+let CLK_M = 0;        // phase: estimated score-seconds
+let CLK_R = 1;        // rate: estimated score-seconds per wall-second (nominal = PLAYBACK_RATE)
+let CLK_TAU = 0;      // performance.now()/1000 at the last predict()
+let CLK_RAW = NaN;    // last raw getCurrentTime() — the correction is skipped unless it changed
+let CLK_OUT = 0;      // last emitted t; the bar never steps back below this while playing
 let ACTIVE_ROW = -1;
 let BAR_RECT = null;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const BAR_COLOR = '#36b35a';
 const BAR_OPACITY = 0.32;
 const BAR_WIDTH = 9;
-const YT_RESAMPLE_SEC = 0.25; // getCurrentTime quantises to ~250 ms; polling faster just oscillates
+// Estimator tuning. Kp/Ki give a critically-/over-damped loop that settles a
+// 250 ms quantisation step in ~0.5-1 s with no overshoot. SEEK_EPS draws the
+// line between sensor noise (corrected gently) and a real seek (hard-set).
+// LATENCY_LEAD nudges the bar slightly ahead to offset audio-output latency
+// (getCurrentTime reports a touch behind what you actually hear); tune by eye.
+const CLK_KP = 0.2;          // phase gain (per correction)
+const CLK_KI = 0.05;         // rate gain (per correction)
+const CLK_SEEK_EPS = 0.35;   // |residual| (s) above which we hard-set (seek/resync)
+const LATENCY_LEAD = 0.05;   // s the bar leads the reported time
 
 // Build a score-position → score-seconds function from the chosen YouTube
 // candidate's per-measure anchors. This is a faithful port of the deployed
@@ -513,9 +531,81 @@ function buildMeasure(m, lyrics) {
   return { m, notes, voice, minW, tuplets };
 }
 
+// Distribute a row's available width across its measures PROPORTIONALLY TO
+// MUSICAL DURATION (a 4/4 bar gets twice a 2/4 bar), subject to a per-measure
+// minimum (its min legible width) so dense bars are never crushed. One-pass
+// water-filling / isotonic projection: repeatedly pin any measure whose
+// proportional share falls below its floor, then split the remaining width among
+// the rest by weight. The row packer keeps Σ floors ≤ total, so slack stays ≥ 0.
+function allocateWidths(weights, floors, total) {
+  const n = weights.length;
+  const w = new Array(n).fill(0);
+  const fixed = new Array(n).fill(false);
+  let remaining = total;
+  for (let pass = 0; pass <= n; pass++) {
+    let wsum = 0;
+    for (let i = 0; i < n; i++) if (!fixed[i]) wsum += weights[i];
+    if (wsum <= 0) break;
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (fixed[i]) continue;
+      if (remaining * weights[i] / wsum < floors[i]) {
+        w[i] = floors[i]; fixed[i] = true; remaining -= floors[i]; changed = true;
+      }
+    }
+    if (!changed) {
+      for (let i = 0; i < n; i++) if (!fixed[i]) w[i] = remaining * weights[i] / wsum;
+      break;
+    }
+  }
+  for (let i = 0; i < n; i++) if (!fixed[i] && w[i] === 0) w[i] = floors[i];
+  return w;
+}
+
+// Re-space one bar's tickables so horizontal position is proportional to musical
+// ONSET (quarter ⇒ 2× the room of an eighth; triplet members evenly fill their
+// span), then project to honour a minimum centre-to-centre gap so heads, dots
+// and reserved lyric widths never collide. Onsets come from cumulative ticks
+// (covers notes, rests and tuplets); footprints from each tickable's formatted
+// width. We move each tickable's TickContext x, so stems, beams, heads and the
+// cursor anchors (read after draw) all follow. Composed with duration-weighted
+// bar widths, this makes the cursor's pixel velocity constant within a steady
+// bar — the spatial half of "smooth".
+function applyProportionalSpacing(voice, usable) {
+  const ticks = voice.getTickables();
+  const n = ticks.length;
+  if (n < 2 || usable <= 0) return;
+  let total = 0;
+  try { total = voice.getTicksUsed().value(); } catch (_) {}
+  if (!total) return;
+
+  const ideal = new Array(n), half = new Array(n);
+  let acc = 0;
+  for (let i = 0; i < n; i++) {
+    ideal[i] = (acc / total) * usable;
+    let wd = 12; try { wd = ticks[i].getWidth() || wd; } catch (_) {}
+    half[i] = wd / 2;
+    let tk = 0; try { tk = ticks[i].getTicks().value(); } catch (_) {}
+    acc += tk;
+  }
+  const PAD = 4;
+  const gap = i => half[i] + half[i + 1] + PAD;   // min centre-to-centre
+
+  const x = ideal.slice();
+  x[0] = Math.max(half[0], x[0]);                                            // left edge in bounds
+  for (let i = 1; i < n; i++) x[i] = Math.max(x[i], x[i - 1] + gap(i - 1));  // push right to clear
+  x[n - 1] = Math.min(x[n - 1], usable - half[n - 1]);                       // right edge in bounds
+  for (let i = n - 2; i >= 0; i--) x[i] = Math.min(x[i], x[i + 1] - gap(i)); // pull back toward ideal
+
+  for (let i = 0; i < n; i++) {
+    const tc = ticks[i].getTickContext && ticks[i].getTickContext();
+    if (tc && tc.setX) tc.setX(x[i]);
+  }
+}
+
 // Lay out and draw one row of pre-built measures into `container`, sized to
-// `pageWidth`. Each bar's width = its min width × a single row-wide scale, so
-// all bars stretch by the same factor and fill the row (Songsterr's even look).
+// `pageWidth`. Bar widths are proportional to musical duration (floored at each
+// bar's min legible width) and notes are placed proportionally to onset time.
 function renderRow(built, rowIdx, container, pageWidth) {
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(pageWidth, ROW_HEIGHT);
@@ -523,8 +613,12 @@ function renderRow(built, rowIdx, container, pageWidth) {
 
   const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
   const availWidth = pageWidth - SIDE_MARGIN * 2 - clefWidth;
-  const minSum = built.reduce((a, b) => a + b.minW, 0) || 1;
-  const scale = availWidth / minSum;
+  // Bar widths proportional to musical duration (not content density), floored at
+  // each bar's min legible width. A 2/4 bar is then half a 4/4 bar, and the whole
+  // row is one linear time→x map (constant cursor velocity within a steady bar).
+  const weights = built.map(b => b.m.duration[0] / b.m.duration[1]);
+  const floors = built.map(b => b.minW);
+  const widths = allocateWidths(weights, floors, availWidth);
 
   const rowLyrics = [];   // {x, text, cont} collected across the row, drawn last
   let baselineY = ROW_TOP;
@@ -542,7 +636,7 @@ function renderRow(built, rowIdx, container, pageWidth) {
   let x = SIDE_MARGIN;
   for (let i = 0; i < built.length; i++) {
     const { m, notes, voice, tuplets } = built[i];
-    const myWidth = built[i].minW * scale + (i === 0 ? clefWidth : 0);
+    const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
     const stave = new VF.Stave(x, ROW_TOP, myWidth);
     // Thin grey staff lines / barlines / clef / measure number.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
@@ -585,6 +679,7 @@ function renderRow(built, rowIdx, container, pageWidth) {
     for (const n of notes) { if (n.setStave) n.setStave(stave); }   // so getYs() works below
     try {
       new VF.Formatter().joinVoices([voice]).format([voice], noteArea - 6);
+      applyProportionalSpacing(voice, noteArea - 6);
     } catch (e) { console.warn('format failed m', m.index, e); }
 
     // Width is now reserved; blank the annotations so they don't draw at their
@@ -777,11 +872,19 @@ function makeBar() {
   BAR_RECT.setAttribute('width', BAR_WIDTH);
   BAR_RECT.setAttribute('rx', 1.5);
   BAR_RECT.setAttribute('pointer-events', 'none');
+  // Driven by CSS transform (compositor layer) rather than the x attribute, so
+  // per-frame moves never trigger an SVG repaint/relayout — smoother on iPad.
+  // The svg isn't CSS-scaled, so 1px == 1 user unit; transform-box/origin are
+  // pinned so the translate is unambiguous.
+  BAR_RECT.setAttribute('x', 0);
+  BAR_RECT.style.willChange = 'transform';
+  BAR_RECT.style.transformBox = 'view-box';
+  BAR_RECT.style.transformOrigin = '0 0';
   const r0 = ROWS[0];
   r0.svg.appendChild(BAR_RECT);
   BAR_RECT.setAttribute('y', r0.yTop);
   BAR_RECT.setAttribute('height', r0.yBottom - r0.yTop);
-  BAR_RECT.setAttribute('x', r0.anchors[0].x - BAR_WIDTH / 2);
+  BAR_RECT.style.transform = 'translate3d(' + (r0.anchors[0].x - BAR_WIDTH / 2) + 'px,0,0)';
   ACTIVE_ROW = 0;
 }
 
@@ -814,7 +917,7 @@ function updateBar(t) {
     ACTIVE_ROW = r;
     centerRow(row.div);          // teleprompter: keep the active row centred
   }
-  BAR_RECT.setAttribute('x', xAtTime(row, t) - BAR_WIDTH / 2);
+  BAR_RECT.style.transform = 'translate3d(' + (xAtTime(row, t) - BAR_WIDTH / 2) + 'px,0,0)';
 }
 
 // Teleprompter scroll: keep the active row vertically centred in the space below
@@ -828,14 +931,48 @@ function centerRow(div) {
   window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
 }
 
-// getCurrentTime() quantises to ~250 ms, so we sample it sparsely and advance
-// with performance.now() between samples (the iPad-safe clock — Tone.Transport
-// stalls when a silent AudioContext suspends; see the ios-audiocontext note).
-function resampleYt(perf) {
-  let t; try { t = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
-  if (typeof t !== 'number' || !isFinite(t)) return;
-  LAST_SAMPLE_SCORESEC = t - OFFSET;
-  LAST_SAMPLE_PERF = perf;
+// The bar runs on performance.now() (the iPad-safe clock — Tone.Transport stalls
+// when a silent AudioContext suspends; see the ios-audiocontext note), corrected
+// toward the YouTube sensor by the PI loop above.
+
+// Hard-set the estimator to a known media time (first sync, resume, seek, rate
+// change): rate resets to nominal and the monotonic latch is released, so a
+// backward seek can legitimately move the bar back.
+function clkHardSet(scoreSec) {
+  CLK_M = scoreSec;
+  CLK_R = PLAYBACK_RATE;
+  CLK_OUT = scoreSec;
+}
+
+// Read getCurrentTime() and re-anchor hard. Used on Sync / resume / speed change.
+function clkResync() {
+  let y; try { y = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
+  if (typeof y !== 'number' || !isFinite(y)) return;
+  CLK_RAW = y;
+  CLK_TAU = performance.now() / 1000;
+  clkHardSet(y - OFFSET);
+}
+
+// Predict: advance the phase by rate × wall-time elapsed since the last call.
+function clkPredict(tau) {
+  CLK_M += CLK_R * (tau - CLK_TAU);
+  CLK_TAU = tau;
+}
+
+// Correct: fuse a fresh sensor reading. The value is constant for ~250 ms, so we
+// ignore unchanged samples (feeding duplicates in is what makes a naive loop
+// oscillate). A small residual nudges phase and trims rate; a large one is a
+// seek, so we hard-set.
+function clkCorrect() {
+  let y; try { y = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
+  if (typeof y !== 'number' || !isFinite(y) || y === CLK_RAW) return;
+  CLK_RAW = y;
+  const e = (y - OFFSET) - CLK_M;
+  if (Math.abs(e) > CLK_SEEK_EPS) { clkHardSet(y - OFFSET); return; }
+  CLK_M += CLK_KP * e;
+  CLK_R += CLK_KI * e;
+  const lo = PLAYBACK_RATE * 0.8, hi = PLAYBACK_RATE * 1.2;
+  if (CLK_R < lo) CLK_R = lo; else if (CLK_R > hi) CLK_R = hi;
 }
 
 function startBarLoop() {
@@ -844,14 +981,15 @@ function startBarLoop() {
     // SYNCED gates out the preroll-ad window: until the user taps Sync, the bar
     // stays parked at beat 1 even while the video (or its ad) is playing.
     if (YT_READY && SYNCED && IS_PLAYING) {
-      const perf = performance.now() / 1000;
-      if (perf - LAST_SAMPLE_PERF > YT_RESAMPLE_SEC) resampleYt(perf);
-      // Advance by PLAYBACK_RATE × elapsed: at 0.5× the audio moves at half
-      // real-time, so the cursor must too (the sparse getCurrentTime samples
-      // already reflect the slowed clock; only the interpolation needs scaling).
-      const t = LAST_SAMPLE_SCORESEC + PLAYBACK_RATE * (performance.now() / 1000 - LAST_SAMPLE_PERF);
+      const tau = performance.now() / 1000;
+      clkPredict(tau);                 // advance the smooth phase
+      clkCorrect();                    // fuse a fresh YT sample if there is one
+      let t = CLK_M + LATENCY_LEAD;
+      // Monotonic latch: while playing the bar never steps back, independent of
+      // gain tuning. A seek/resync releases it (CLK_OUT was reset in clkHardSet).
+      if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
       updateBar(t);
-      if (perf - lastStatus > 0.2) { updateStatus(t); lastStatus = perf; }
+      if (tau - lastStatus > 0.2) { updateStatus(t); lastStatus = tau; }
     }
     requestAnimationFrame(frame);
   };
@@ -905,7 +1043,7 @@ function refreshTransport() {
 function doSync() {
   if (!YT_READY) return;
   SYNCED = true;
-  resampleYt(performance.now() / 1000);
+  clkResync();
   refreshTransport();
 }
 
@@ -913,7 +1051,7 @@ function setRate(delta) {
   RATE_IDX = Math.max(0, Math.min(RATES.length - 1, RATE_IDX + delta));
   PLAYBACK_RATE = RATES[RATE_IDX];
   try { if (YT_PLAYER) YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {}
-  if (SYNCED) resampleYt(performance.now() / 1000);   // re-anchor so the bar doesn't lurch
+  if (SYNCED) clkResync();   // re-anchor at the new rate so the bar doesn't lurch
   const el = document.getElementById('rate');
   if (el) el.textContent = Math.round(PLAYBACK_RATE * 100) + '%';
 }
@@ -948,7 +1086,7 @@ function initYt(videoId) {
         onReady: () => { YT_READY = true; refreshTransport(); },
         onStateChange: (e) => {
           IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
-          if (IS_PLAYING && SYNCED) resampleYt(performance.now() / 1000);
+          if (IS_PLAYING && SYNCED) clkResync();
           refreshTransport();
         },
       },
