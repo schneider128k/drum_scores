@@ -1086,6 +1086,7 @@ function initYt(videoId) {
         onReady: () => { YT_READY = true; refreshTransport(); },
         onStateChange: (e) => {
           IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
+          if (IS_PLAYING) STARTED = true;            // play via the app button OR YouTube's own play → advance the button to Sync
           if (IS_PLAYING && SYNCED) clkResync();
           refreshTransport();
         },

@@ -866,8 +866,8 @@ function refreshTransport() {
   btn.disabled = !YT_READY;
   btn.classList.toggle('attention', s === 'PRESYNC');
   document.getElementById('hint').textContent = {
-    IDLE: 'Press Play. After any ad, tap Sync the instant the song starts.',
-    PRESYNC: 'Ad running? Wait/Skip, then tap Sync when the song actually starts.',
+    IDLE: 'Press Play — here or on the video. After any ad, tap Sync when the song starts.',
+    PRESYNC: 'Ad running? Wait or Skip, then tap Sync the instant the song actually starts.',
     PLAYING: '', PAUSED: 'Paused.',
   }[s];
 }
@@ -898,7 +898,12 @@ function loadVideo(id) {
       videoId: PENDING_VIDEO, playerVars: { playsinline: 1, origin: location.origin },
       events: {
         onReady: () => { YT_READY = true; refreshTransport(); },
-        onStateChange: (e) => { IS_PLAYING = (e.data === YT.PlayerState.PLAYING); if (IS_PLAYING && SYNCED) clkResync(); refreshTransport(); },
+        onStateChange: (e) => {
+          IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
+          if (IS_PLAYING) STARTED = true;           // playing via the app button OR YouTube's own play → advance the smart button to Sync
+          if (IS_PLAYING && SYNCED) clkResync();     // resume mid-song re-anchors the clock
+          refreshTransport();
+        },
         onError: (e) => { if ([100, 101, 150].includes(e && e.data)) tryNextSource(); },  // removed/private/embed-disabled → next candidate (transient errors keep the Original)
       },
     });
