@@ -527,11 +527,12 @@ function buildMeasure(m, lyrics) {
       minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
     } catch (e) { console.warn('minwidth failed m', m.index, e); }
 
-    // Floor the bar's min width by its note count (~one notehead + breathing room
-    // each), so the packer gives a dense 16th run (e.g. Come As You Are's Refrain)
-    // enough room — FEWER bars per row on a narrow window instead of crowding. At a
-    // wide window the floor doesn't bind, so the spacious look is unchanged.
-    minW = Math.max(minW, notes.length * 17);
+    // Floor the bar's min width by its note count (~26px each: a notehead plus the
+    // breathing room a 16th run needs to not cram). This makes the packer give a
+    // dense bar (e.g. Come As You Are bar 27 — three 8ths then an eleven-note 16th
+    // run) enough width, taking FEWER bars per row rather than crowding. Sparse
+    // bars have few notes so the floor doesn't bind and the spacious look is kept.
+    minW = Math.max(minW, notes.length * 26);
   }
   return { m, notes, voice, minW, tuplets };
 }
@@ -1011,6 +1012,10 @@ function clkPredict(tau) {
 // oscillate). A small residual nudges phase and trims rate; a large one is a
 // seek, so we hard-set.
 function clkCorrect() {
+  // While a loop seek is settling, getCurrentTime still reports the OLD (loop-end)
+  // position for a moment; fusing it would yank the clock back to the end and
+  // re-fire the seek. Hold the hard-set value until the seek lands.
+  if (performance.now() / 1000 < LOOP_SEEK_UNTIL) return;
   let y; try { y = YT_PLAYER.getCurrentTime(); } catch (_) { return; }
   if (typeof y !== 'number' || !isFinite(y) || y === CLK_RAW) return;
   CLK_RAW = y;
@@ -1037,6 +1042,14 @@ function startBarLoop() {
       if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
       updateBar(t);
       if (tau - lastStatus > 0.2) { updateStatus(t); lastStatus = tau; }
+
+      // Loop: once the video passes the loop's end bar, seek back to the start.
+      // Checked against the actual video time (not the smooth clock) so it fires
+      // at the true boundary; the cooldown avoids re-firing during the seek.
+      if (LOOP_ON && tau >= LOOP_SEEK_UNTIL) {
+        let yt; try { yt = YT_PLAYER.getCurrentTime(); } catch (_) {}
+        if (typeof yt === 'number' && isFinite(yt) && (yt - OFFSET) >= LOOP_END_SEC) seekToLoopStart();
+      }
     }
     requestAnimationFrame(frame);
   };
@@ -1091,7 +1104,74 @@ function doSync() {
   if (!YT_READY) return;
   SYNCED = true;
   clkResync();
+  if (LOOP_ON) seekToLoopStart();   // jump straight to the practice region once we're past the ad
   refreshTransport();
+}
+
+// ── Loop / section repeat ─────────────────────────────────────────────────────
+// Repeat a [start..end] measure range. Timing is in score-seconds (the YT video
+// time minus OFFSET), so a seek-back stays WITHIN the song and never replays the
+// preroll ad. The loop is independent of Play/Sync: you still press Play, wait
+// out any ad, and tap Sync — only then (and on each pass) do we seek.
+let LOOP_ON = false;
+let LOOP_START = 0, LOOP_END = 0;          // measure numbers, 1-based as printed
+let LOOP_START_SEC = 0, LOOP_END_SEC = 0;  // score-seconds of the region's edges
+let LOOP_SEEK_UNTIL = 0;                   // perf-seconds: suppress end-checks + sensor fusion while a seek settles
+
+function measureByIndex(k) {
+  return (SCORE_REF && SCORE_REF.measures.find(m => m.index === k)) || null;
+}
+function loopComputeSecs() {
+  const a = measureByIndex(LOOP_START), b = measureByIndex(LOOP_END);
+  if (!a || !b || !SCHED) return false;
+  LOOP_START_SEC = SCHED.at(a.position[0] / a.position[1]);
+  LOOP_END_SEC = SCHED.at(b.position[0] / b.position[1] + b.duration[0] / b.duration[1]);
+  return LOOP_END_SEC > LOOP_START_SEC;
+}
+function seekToLoopStart() {
+  if (!LOOP_ON || !YT_READY) return;
+  try { YT_PLAYER.seekTo(LOOP_START_SEC + OFFSET, true); } catch (_) {}
+  clkHardSet(LOOP_START_SEC);                       // releases the monotonic latch so the bar may jump back
+  LOOP_SEEK_UNTIL = performance.now() / 1000 + 0.6; // let the seek land before checking/fusing again
+}
+function highlightLoopRows() {
+  for (const r of ROWS) {
+    if (!r.div) continue;
+    const on = LOOP_ON && r.endSec > LOOP_START_SEC + 1e-3 && r.startSec < LOOP_END_SEC - 1e-3;
+    r.div.classList.toggle('looping', on);
+  }
+}
+function refreshLoopBtn() {
+  const btn = document.getElementById('loopbtn');
+  if (!btn) return;
+  btn.textContent = LOOP_ON ? `Loop ${LOOP_START}–${LOOP_END}` : 'Loop';
+  btn.classList.toggle('on', LOOP_ON);
+}
+function applyLoop() {
+  const hint = document.getElementById('loopHint');
+  const setHint = m => { if (hint) hint.textContent = m; };
+  if (!SCHED) { setHint('This song has no synced timing to loop.'); return; }
+  const n = SCORE_REF ? SCORE_REF.measures.length : 0;
+  const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
+  let s = parseInt(sEl && sEl.value, 10), e = parseInt(eEl && eEl.value, 10);
+  if (!Number.isFinite(s) || !Number.isFinite(e)) { setHint('Enter a start and end bar.'); return; }
+  s = Math.max(1, Math.min(n, s)); e = Math.max(1, Math.min(n, e));
+  if (s > e) { const t = s; s = e; e = t; }
+  LOOP_START = s; LOOP_END = e;
+  if (sEl) sEl.value = s; if (eEl) eEl.value = e;
+  if (!loopComputeSecs()) { setHint('Could not set that range.'); return; }
+  LOOP_ON = true;
+  setHint(`Looping bars ${s}–${e}.`);
+  refreshLoopBtn();
+  highlightLoopRows();
+  if (SYNCED && IS_PLAYING) seekToLoopStart();   // already playing → jump to the region now
+}
+function clearLoop() {
+  LOOP_ON = false;
+  const hint = document.getElementById('loopHint');
+  if (hint) hint.textContent = '';
+  refreshLoopBtn();
+  highlightLoopRows();
 }
 
 function setRate(delta) {
@@ -1162,6 +1242,20 @@ function wireControls() {
       if (!moreMenu.hidden && !moreMenu.contains(e.target) && e.target !== moreBtn) moreMenu.hidden = true;
     });
   }
+
+  // Loop popover: toggle on its button, close on any outside click.
+  const loopBtn = document.getElementById('loopbtn');
+  const loopMenu = document.getElementById('loopmenu');
+  if (loopBtn && loopMenu) {
+    loopBtn.addEventListener('click', e => { e.stopPropagation(); loopMenu.hidden = !loopMenu.hidden; });
+    document.addEventListener('click', e => {
+      if (!loopMenu.hidden && !loopMenu.contains(e.target) && e.target !== loopBtn) loopMenu.hidden = true;
+    });
+  }
+  const la = document.getElementById('loopApply');
+  if (la) la.addEventListener('click', applyLoop);
+  const lc = document.getElementById('loopClear');
+  if (lc) lc.addEventListener('click', clearLoop);
 }
 
 function closeMoreMenu() {
@@ -1185,6 +1279,7 @@ function onResize() {
   _resizeTimer = setTimeout(() => {
     renderScore(SCORE_REF, document.getElementById('score'));
     if (SCHED && ROWS.length) makeBar();   // re-attach the bar to the fresh rows
+    highlightLoopRows();                   // re-tint the looped rows after the rebuild
   }, 200);
 }
 
@@ -1270,6 +1365,16 @@ function boot() {
     startBarLoop();
   }
   refreshTransport();
+
+  // Optional ?loop=<start>-<end> deep link (e.g. ?song=14_6&loop=27-30): pre-set
+  // a practice loop so it can be shared/bookmarked. Takes effect on the next Sync.
+  const lp = (new URLSearchParams(location.search).get('loop') || '').match(/^(\d+)-(\d+)$/);
+  if (lp && SCHED) {
+    const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
+    if (sEl) sEl.value = lp[1];
+    if (eEl) eEl.value = lp[2];
+    applyLoop();
+  }
 }
 
 if (document.readyState === 'loading') {

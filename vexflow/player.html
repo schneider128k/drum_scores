@@ -76,6 +76,34 @@
       padding: 11px 12px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; white-space: nowrap;
     }
     #moremenu button:hover, #moremenu a:hover { background: #f0f0f0; }
+
+    /* Loop / section repeat: a dock button that opens a from–to bar picker. */
+    .loop-wrap { position: relative; flex: 0 0 auto; }
+    #loopbtn {
+      min-height: 44px; padding: 0 16px; font-size: 14px; font-weight: 600;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer; white-space: nowrap;
+    }
+    #loopbtn.on { border-color: #36b35a; color: #1f8f43; background: #f0fbf3; }
+    #loopmenu {
+      position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 11;
+      display: flex; flex-direction: column; gap: 10px; min-width: 220px;
+      background: #fff; border: 1px solid #d8d8d8; border-radius: 12px; padding: 12px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.16);
+    }
+    #loopmenu[hidden] { display: none; }
+    .loop-fields { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #444; }
+    .loop-fields input {
+      width: 66px; min-height: 40px; font-size: 16px; text-align: center;
+      border: 1px solid #cfcfcf; border-radius: 8px; padding: 0 6px;
+    }
+    .loop-actions { display: flex; gap: 8px; }
+    .loop-actions button { flex: 1; min-height: 40px; font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; }
+    #loopApply { background: #36b35a; color: #fff; border: 0; }
+    #loopClear { background: #fff; color: #555; border: 1px solid #cfcfcf; }
+    #loopHint { font-size: 12px; color: #888; min-height: 14px; }
+    /* The looped bars are tinted with a green left-edge so the region is visible. */
+    .row.looping { background: rgba(54,179,90,0.07); box-shadow: inset 3px 0 0 #36b35a; }
+
     @media (max-width: 700px) {
       #yt { width: 120px; height: 68px; }
       #transport { min-width: 96px; padding: 0 16px; }
@@ -122,6 +150,22 @@
         <span id="rate">100%</span>
         <button id="faster" aria-label="Faster">+</button>
       </span>
+      <div class="loop-wrap">
+        <button id="loopbtn" aria-haspopup="true">Loop</button>
+        <div id="loopmenu" hidden>
+          <div class="loop-fields">
+            <span>Bars</span>
+            <input id="loopStart" type="number" min="1" inputmode="numeric" placeholder="from">
+            <span>–</span>
+            <input id="loopEnd" type="number" min="1" inputmode="numeric" placeholder="to">
+          </div>
+          <div class="loop-actions">
+            <button id="loopApply">Loop these bars</button>
+            <button id="loopClear">Off</button>
+          </div>
+          <div id="loopHint"></div>
+        </div>
+      </div>
       <span class="spacer"></span>
       <div id="yt"></div>
       <div class="more-wrap">
