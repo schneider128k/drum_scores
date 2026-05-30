@@ -65,8 +65,8 @@ let ACTIVE_ROW = -1;
 let BAR_RECT = null;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const BAR_COLOR = '#36b35a';
-const BAR_OPACITY = 0.32;
-const BAR_WIDTH = 9;
+const BAR_PEAK_OPACITY = 0.9;   // gradient is greenest in the middle, fading to 0 at both edges (no hard contour)
+const BAR_WIDTH = 12;           // still narrow; the soft fade makes the visible core ~half this
 // Estimator tuning. Kp/Ki give a critically-/over-damped loop that settles a
 // 250 ms quantisation step in ~0.5-1 s with no overshoot. SEEK_EPS draws the
 // line between sensor noise (corrected gently) and a real seek (hard-set).
@@ -952,13 +952,36 @@ function renderScore(score, container, opts) {
 // re-parent it (also brings it on top) and reset its y/height; every frame we
 // just set x. All timing is in score-seconds (YT.getCurrentTime() - OFFSET).
 
+// The cursor's fill is a horizontal gradient: opaque green at the centre, fading to
+// fully transparent at the left and right edges — so it has no hard contour and reads
+// as a soft vertical glow centred exactly on the play position. Each row is its own
+// <svg>, and a paint server (url(#id)) only resolves within the same <svg>, so we add
+// the gradient def to whichever row svg the bar currently lives in (idempotent).
+const CURSOR_GRAD_ID = 'cursor-grad';
+function ensureCursorGradient(svg) {
+  if (!svg || svg.querySelector('#' + CURSOR_GRAD_ID)) return;
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const lg = document.createElementNS(SVG_NS, 'linearGradient');
+  lg.setAttribute('id', CURSOR_GRAD_ID);
+  lg.setAttribute('x1', '0'); lg.setAttribute('y1', '0');
+  lg.setAttribute('x2', '1'); lg.setAttribute('y2', '0');   // horizontal, across the rect width
+  for (const [off, op] of [['0', 0], ['0.5', BAR_PEAK_OPACITY], ['1', 0]]) {
+    const s = document.createElementNS(SVG_NS, 'stop');
+    s.setAttribute('offset', off);
+    s.setAttribute('stop-color', BAR_COLOR);
+    s.setAttribute('stop-opacity', String(op));
+    lg.appendChild(s);
+  }
+  defs.appendChild(lg);
+  svg.insertBefore(defs, svg.firstChild);
+}
+
 function makeBar() {
   BAR_RECT = document.createElementNS(SVG_NS, 'rect');
   BAR_RECT.id = 'cursor-bar';   // so print CSS can hide it
-  BAR_RECT.setAttribute('fill', BAR_COLOR);
-  BAR_RECT.setAttribute('fill-opacity', BAR_OPACITY);
+  BAR_RECT.setAttribute('fill', 'url(#' + CURSOR_GRAD_ID + ')');
+  BAR_RECT.setAttribute('stroke', 'none');   // no contour
   BAR_RECT.setAttribute('width', BAR_WIDTH);
-  BAR_RECT.setAttribute('rx', 1.5);
   BAR_RECT.setAttribute('pointer-events', 'none');
   // Driven by CSS transform (compositor layer) rather than the x attribute, so
   // per-frame moves never trigger an SVG repaint/relayout — smoother on iPad.
@@ -969,6 +992,7 @@ function makeBar() {
   BAR_RECT.style.transformBox = 'view-box';
   BAR_RECT.style.transformOrigin = '0 0';
   const r0 = ROWS[0];
+  ensureCursorGradient(r0.svg);
   r0.svg.appendChild(BAR_RECT);
   BAR_RECT.setAttribute('y', r0.yTop);
   BAR_RECT.setAttribute('height', r0.yBottom - r0.yTop);
@@ -999,6 +1023,7 @@ function updateBar(t) {
   while (r < ROWS.length - 1 && t >= ROWS[r].endSec) r++;
   const row = ROWS[r];
   if (r !== ACTIVE_ROW) {
+    ensureCursorGradient(row.svg);
     row.svg.appendChild(BAR_RECT);
     BAR_RECT.setAttribute('y', row.yTop);
     BAR_RECT.setAttribute('height', row.yBottom - row.yTop);
@@ -1247,21 +1272,19 @@ function restoreVolume() { setLoopVolume(100); }
 // (two dots + thin|thick bar) at the END measure's right barline. Drawn as an SVG
 // overlay from MEASURE_BOXES so no re-render is needed when the loop changes.
 const LOOP_BLUE = '#2f6fed';
-const LOOP_BAR_RISE = 16;   // px the loop boundary bars rise ABOVE the top staff line, so the region is easy to spot
 function clearLoopMarkers() {
   for (const g of document.querySelectorAll('.loop-marker')) g.remove();
 }
 function repeatSign(box, x, kind) {
   // kind: 'begin' (bar on the left, dots to the right) | 'end' (dots left, bar right).
-  // The two bars run from a little ABOVE the top staff line down to the bottom line,
-  // so each loop edge reads as a tall vertical marker bracketing the practice region;
-  // the dots stay at staff height to keep the musical repeat-sign look.
+  // A normal staff-height musical repeat sign (NOT taller — a taller bar collides with
+  // the measure number above), PLUS a blue triangle just BELOW the staff at the barline
+  // pointing INTO the loop. The triangle sits in clear space (no notehead/stem lands on
+  // a barline) and gives an at-a-glance start/end flag without a highlight wash.
   const g = document.createElementNS(SVG_NS, 'g');
   g.setAttribute('class', 'loop-marker');
   g.setAttribute('pointer-events', 'none');
   const yT = box.yTop, yB = box.yBottom, h = yB - yT;
-  const barTop = yT - LOOP_BAR_RISE;          // rise above the 5 staff lines
-  const barH = yB - barTop;
   const dotY1 = yT + h * (1.5 / 4), dotY2 = yT + h * (2.5 / 4);
   const dir = kind === 'begin' ? 1 : -1;
   const thickW = 3.2, thinW = 1.2, gap = 2.6, dotGap = 5, dotR = 2.1;
@@ -1269,13 +1292,13 @@ function repeatSign(box, x, kind) {
   const thinX = kind === 'begin' ? x + thickW + gap : x - thickW - gap - thinW;
   const dotX = kind === 'begin' ? thinX + thinW + dotGap : thinX - dotGap;
   const rect = document.createElementNS(SVG_NS, 'rect');
-  rect.setAttribute('x', thickX); rect.setAttribute('y', barTop);
-  rect.setAttribute('width', thickW); rect.setAttribute('height', barH);
+  rect.setAttribute('x', thickX); rect.setAttribute('y', yT);
+  rect.setAttribute('width', thickW); rect.setAttribute('height', h);
   rect.setAttribute('fill', LOOP_BLUE);
   g.appendChild(rect);
   const line = document.createElementNS(SVG_NS, 'rect');
-  line.setAttribute('x', thinX); line.setAttribute('y', barTop);
-  line.setAttribute('width', thinW); line.setAttribute('height', barH);
+  line.setAttribute('x', thinX); line.setAttribute('y', yT);
+  line.setAttribute('width', thinW); line.setAttribute('height', h);
   line.setAttribute('fill', LOOP_BLUE);
   g.appendChild(line);
   for (const dy of [dotY1, dotY2]) {
@@ -1284,6 +1307,13 @@ function repeatSign(box, x, kind) {
     c.setAttribute('r', dotR); c.setAttribute('fill', LOOP_BLUE);
     g.appendChild(c);
   }
+  // Inward-pointing flag below the staff at the barline (▶ at the start, ◀ at the end).
+  const fy = yB + 5, fh = 9, fw = 9;
+  const tipX = x + dir * fw;
+  const tri = document.createElementNS(SVG_NS, 'polygon');
+  tri.setAttribute('points', `${x},${fy} ${x},${fy + fh} ${tipX},${fy + fh / 2}`);
+  tri.setAttribute('fill', LOOP_BLUE);
+  g.appendChild(tri);
   box.svg.appendChild(g);
 }
 function drawLoopMarkers() {
