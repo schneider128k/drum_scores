@@ -85,11 +85,13 @@
     /* Print header — only appears in the printout (above the first row). */
     #print-header { display: none; }
 
-    /* Print to Letter: drop the dock + cursor, lay rows on paper, keep each row
-       whole on a page. The score is re-rendered to the page width on print
-       (renderer.js), and the viewBox lets the SVG scale to fit as a fallback. */
+    /* Print to Letter (portrait). Publisher approach: lay the score out at a
+       comfortable reference width (4 bars/row, uncrowded — renderer.js renders at
+       PRINT_WIDTH on print), then the viewBox + `.row svg { width:100% }` scales
+       each system DOWN uniformly to the narrower page width. Nothing is re-spaced,
+       just smaller, and the shorter rows pack ~6 to a page instead of ~3. */
     @media print {
-      @page { size: letter landscape; margin: 0.5in; }
+      @page { size: letter portrait; margin: 0.5in; }
       html, body { background: #fff; }
       #dock, #errlog { display: none !important; }
       #cursor-bar { display: none !important; }

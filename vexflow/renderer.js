@@ -1200,7 +1200,11 @@ function onResize() {
 // idempotent and reached three ways for cross-browser cover: the Print button,
 // the beforeprint/afterprint events (desktop), and a matchMedia('print') change
 // (iPad Safari, which doesn't reliably fire beforeprint).
-const PRINT_WIDTH = 960;   // ~10in printable on Letter landscape at 96dpi (fits 4 bars/row)
+// Reference LAYOUT width for print: lay the score out here (a comfortable 4
+// bars/row, uncrowded), then the viewBox scales each system down to the ~7.5in
+// Letter-portrait printable area (≈720px) — like a publisher choosing a staff
+// size. Wider than the page on purpose: the scale-down is what shrinks the staff.
+const PRINT_WIDTH = 1080;
 let _printing = false;
 
 function enterPrint() {
