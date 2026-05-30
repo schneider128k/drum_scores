@@ -1020,7 +1020,13 @@ function clkCorrect() {
   if (typeof y !== 'number' || !isFinite(y) || y === CLK_RAW) return;
   CLK_RAW = y;
   const e = (y - OFFSET) - CLK_M;
-  if (Math.abs(e) > CLK_SEEK_EPS) { clkHardSet(y - OFFSET); return; }
+  if (Math.abs(e) > CLK_SEEK_EPS) {
+    // While looping we only ever seek BACKWARD; a large FORWARD jump is a stale
+    // pre-seek reading lingering just after a loop-back — ignore it so it can't
+    // yank the clock to the loop end and re-fire the seek.
+    if (LOOP_ON && e > 0) return;
+    clkHardSet(y - OFFSET); return;
+  }
   CLK_M += CLK_KP * e;
   CLK_R += CLK_KI * e;
   const lo = PLAYBACK_RATE * 0.8, hi = PLAYBACK_RATE * 1.2;
@@ -1040,16 +1046,23 @@ function startBarLoop() {
       // Monotonic latch: while playing the bar never steps back, independent of
       // gain tuning. A seek/resync releases it (CLK_OUT was reset in clkHardSet).
       if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
-      updateBar(t);
-      if (tau - lastStatus > 0.2) { updateStatus(t); lastStatus = tau; }
 
-      // Loop: once the video passes the loop's end bar, seek back to the start.
-      // Checked against the actual video time (not the smooth clock) so it fires
-      // at the true boundary; the cooldown avoids re-firing during the seek.
-      if (LOOP_ON && tau >= LOOP_SEEK_UNTIL) {
-        let yt; try { yt = YT_PLAYER.getCurrentTime(); } catch (_) {}
-        if (typeof yt === 'number' && isFinite(yt) && (yt - OFFSET) >= LOOP_END_SEC) seekToLoopStart();
+      // Loop: seek back the instant the audio reaches the loop end — judged by the
+      // smooth, per-frame clock (CLK_M), NOT the ~250ms-quantised getCurrentTime
+      // that let the bar sail past the bar line into the next measure. Until the
+      // seek fires, pin the bar just short of the end bar line so it never tips
+      // into the next measure (the overshoot bug).
+      let shown = t;
+      if (LOOP_ON) {
+        if (tau >= LOOP_SEEK_UNTIL && CLK_M >= LOOP_END_SEC) {
+          seekToLoopStart();
+          shown = LOOP_SEEK_SEC;                          // snap the bar back this same frame
+        } else if (shown > LOOP_END_SEC - LOOP_EDGE_EPS) {
+          shown = LOOP_END_SEC - LOOP_EDGE_EPS;           // hold at the end edge
+        }
       }
+      updateBar(shown);
+      if (tau - lastStatus > 0.2) { updateStatus(shown); lastStatus = tau; }
     }
     requestAnimationFrame(frame);
   };
@@ -1114,24 +1127,32 @@ function doSync() {
 // preroll ad. The loop is independent of Play/Sync: you still press Play, wait
 // out any ad, and tap Sync — only then (and on each pass) do we seek.
 let LOOP_ON = false;
+let LOOP_COUNTIN = false;                   // play the bar before the block as a lead-in
 let LOOP_START = 0, LOOP_END = 0;          // measure numbers, 1-based as printed
-let LOOP_START_SEC = 0, LOOP_END_SEC = 0;  // score-seconds of the region's edges
-let LOOP_SEEK_UNTIL = 0;                   // perf-seconds: suppress end-checks + sensor fusion while a seek settles
+let LOOP_START_SEC = 0, LOOP_END_SEC = 0;  // score-seconds of the repeat block's edges
+let LOOP_SEEK_SEC = 0;                      // where a loop-back seeks to (= block start, or one bar earlier for count-in)
+let LOOP_SEEK_UNTIL = 0;                    // perf-seconds: suppress end-checks + sensor fusion while a seek settles
+const LOOP_EDGE_EPS = 0.02;                 // s kept below the end bar line so the bar never tips into the next measure
 
 function measureByIndex(k) {
   return (SCORE_REF && SCORE_REF.measures.find(m => m.index === k)) || null;
 }
+function measureStartSec(m) { return SCHED.at(m.position[0] / m.position[1]); }
 function loopComputeSecs() {
   const a = measureByIndex(LOOP_START), b = measureByIndex(LOOP_END);
   if (!a || !b || !SCHED) return false;
-  LOOP_START_SEC = SCHED.at(a.position[0] / a.position[1]);
+  LOOP_START_SEC = measureStartSec(a);
   LOOP_END_SEC = SCHED.at(b.position[0] / b.position[1] + b.duration[0] / b.duration[1]);
+  // Count-in: a loop-back lands one bar earlier (its real audio is the lead-in),
+  // but the repeat block — and the highlight — stay [START..END].
+  const ci = (LOOP_COUNTIN && LOOP_START > 1) ? measureByIndex(LOOP_START - 1) : a;
+  LOOP_SEEK_SEC = ci ? measureStartSec(ci) : LOOP_START_SEC;
   return LOOP_END_SEC > LOOP_START_SEC;
 }
 function seekToLoopStart() {
   if (!LOOP_ON || !YT_READY) return;
-  try { YT_PLAYER.seekTo(LOOP_START_SEC + OFFSET, true); } catch (_) {}
-  clkHardSet(LOOP_START_SEC);                       // releases the monotonic latch so the bar may jump back
+  try { YT_PLAYER.seekTo(LOOP_SEEK_SEC + OFFSET, true); } catch (_) {}
+  clkHardSet(LOOP_SEEK_SEC);                         // releases the monotonic latch so the bar may jump back
   LOOP_SEEK_UNTIL = performance.now() / 1000 + 0.6; // let the seek land before checking/fusing again
 }
 function highlightLoopRows() {
@@ -1153,15 +1174,18 @@ function applyLoop() {
   if (!SCHED) { setHint('This song has no synced timing to loop.'); return; }
   const n = SCORE_REF ? SCORE_REF.measures.length : 0;
   const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
+  const ciEl = document.getElementById('loopCountin');
   let s = parseInt(sEl && sEl.value, 10), e = parseInt(eEl && eEl.value, 10);
   if (!Number.isFinite(s) || !Number.isFinite(e)) { setHint('Enter a start and end bar.'); return; }
   s = Math.max(1, Math.min(n, s)); e = Math.max(1, Math.min(n, e));
   if (s > e) { const t = s; s = e; e = t; }
   LOOP_START = s; LOOP_END = e;
+  LOOP_COUNTIN = !!(ciEl && ciEl.checked);
   if (sEl) sEl.value = s; if (eEl) eEl.value = e;
   if (!loopComputeSecs()) { setHint('Could not set that range.'); return; }
   LOOP_ON = true;
-  setHint(`Looping bars ${s}–${e}.`);
+  const withCi = LOOP_COUNTIN && s > 1;
+  setHint(`Looping bars ${s}–${e}${withCi ? ` (count-in from bar ${s - 1})` : ''}.`);
   refreshLoopBtn();
   highlightLoopRows();
   if (SYNCED && IS_PLAYING) seekToLoopStart();   // already playing → jump to the region now
@@ -1256,6 +1280,42 @@ function wireControls() {
   if (la) la.addEventListener('click', applyLoop);
   const lc = document.getElementById('loopClear');
   if (lc) lc.addEventListener('click', clearLoop);
+
+  // Part picker: choosing a section fills the from/to bars exactly and loops it.
+  const sec = document.getElementById('loopSection');
+  if (sec) sec.addEventListener('change', () => {
+    const m = sec.value.match(/^(\d+)-(\d+)$/);
+    if (!m) return;
+    const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
+    if (sEl) sEl.value = m[1];
+    if (eEl) eEl.value = m[2];
+    applyLoop();
+  });
+
+  // Count-in toggle: recompute the loop-back target (one bar earlier or not).
+  const ci = document.getElementById('loopCountin');
+  if (ci) ci.addEventListener('change', () => {
+    LOOP_COUNTIN = ci.checked;
+    if (LOOP_ON) { loopComputeSecs(); applyLoop(); }   // refresh hint + target
+  });
+}
+
+// Fill the part picker from the section markers: each part maps to its exact
+// first..last bar (the bar before the next marker, or the final bar).
+function populateLoopSections(score) {
+  const sel = document.getElementById('loopSection');
+  if (!sel) return;
+  const ms = score.measures;
+  const marked = ms.filter(m => m.marker);
+  const lastIdx = ms[ms.length - 1].index;
+  for (let i = 0; i < marked.length; i++) {
+    const start = marked[i].index;
+    const end = (i + 1 < marked.length) ? marked[i + 1].index - 1 : lastIdx;
+    const opt = document.createElement('option');
+    opt.value = start + '-' + end;
+    opt.textContent = `${marked[i].marker}  (${start}–${end})`;
+    sel.appendChild(opt);
+  }
 }
 
 function closeMoreMenu() {
@@ -1356,6 +1416,7 @@ function boot() {
   renderScore(score, document.getElementById('score'));
 
   wireControls();
+  populateLoopSections(score);
   setupPrint(score);
   window.addEventListener('resize', onResize);
 

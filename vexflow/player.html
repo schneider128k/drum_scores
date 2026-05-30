@@ -96,13 +96,19 @@
       width: 66px; min-height: 40px; font-size: 16px; text-align: center;
       border: 1px solid #cfcfcf; border-radius: 8px; padding: 0 6px;
     }
+    #loopSection {
+      min-height: 40px; font-size: 14px; color: #1a1a1a;
+      border: 1px solid #cfcfcf; border-radius: 8px; padding: 0 8px; background: #fff;
+    }
+    .loop-countin { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; cursor: pointer; }
+    .loop-countin input { width: 18px; height: 18px; }
     .loop-actions { display: flex; gap: 8px; }
     .loop-actions button { flex: 1; min-height: 40px; font-size: 14px; font-weight: 600; border-radius: 8px; cursor: pointer; }
     #loopApply { background: #36b35a; color: #fff; border: 0; }
     #loopClear { background: #fff; color: #555; border: 1px solid #cfcfcf; }
     #loopHint { font-size: 12px; color: #888; min-height: 14px; }
-    /* The looped bars are tinted with a green left-edge so the region is visible. */
-    .row.looping { background: rgba(54,179,90,0.07); box-shadow: inset 3px 0 0 #36b35a; }
+    /* The looped bars get a light green wash (no hard edge line). */
+    .row.looping { background: rgba(54,179,90,0.10); }
 
     @media (max-width: 700px) {
       #yt { width: 120px; height: 68px; }
@@ -144,21 +150,17 @@
     </div>
     <div class="dock-row">
       <button id="transport" disabled>▶ Play</button>
-      <span class="speed">
-        <span class="cap">Speed</span>
-        <button id="slower" aria-label="Slower">−</button>
-        <span id="rate">100%</span>
-        <button id="faster" aria-label="Faster">+</button>
-      </span>
       <div class="loop-wrap">
         <button id="loopbtn" aria-haspopup="true">Loop</button>
         <div id="loopmenu" hidden>
+          <select id="loopSection"><option value="">Jump to a part…</option></select>
           <div class="loop-fields">
             <span>Bars</span>
             <input id="loopStart" type="number" min="1" inputmode="numeric" placeholder="from">
             <span>–</span>
             <input id="loopEnd" type="number" min="1" inputmode="numeric" placeholder="to">
           </div>
+          <label class="loop-countin"><input type="checkbox" id="loopCountin"> Count-in (play the bar before)</label>
           <div class="loop-actions">
             <button id="loopApply">Loop these bars</button>
             <button id="loopClear">Off</button>
@@ -166,6 +168,12 @@
           <div id="loopHint"></div>
         </div>
       </div>
+      <span class="speed">
+        <span class="cap">Speed</span>
+        <button id="slower" aria-label="Slower">−</button>
+        <span id="rate">100%</span>
+        <button id="faster" aria-label="Faster">+</button>
+      </span>
       <span class="spacer"></span>
       <div id="yt"></div>
       <div class="more-wrap">
