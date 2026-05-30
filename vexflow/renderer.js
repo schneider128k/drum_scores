@@ -1196,6 +1196,10 @@ function loopComputeSecs() {
   LOOP_END_SEC = measureEndSec(b);
   // Fade range: start the play F bars before the block (fade in) and run F bars past
   // it (fade out), clamped to the song. F=0 collapses PLAY to the block (hard loop).
+  // EDGE CASE — block starts on the song's first measure: there are no bars before it
+  // to fade in over, so preIdx clamps to firstIdx == LOOP_START, PLAY_START == block
+  // start, and the fade-in length is 0. applyLoopFade then holds full volume from the
+  // top (you can't fade in from before the recording). Same clamp on the tail end.
   const measures = SCORE_REF.measures;
   const firstIdx = measures[0].index, lastIdx = measures[measures.length - 1].index;
   const preIdx = Math.max(firstIdx, LOOP_START - LOOP_FADE_BARS);
@@ -1243,15 +1247,21 @@ function restoreVolume() { setLoopVolume(100); }
 // (two dots + thin|thick bar) at the END measure's right barline. Drawn as an SVG
 // overlay from MEASURE_BOXES so no re-render is needed when the loop changes.
 const LOOP_BLUE = '#2f6fed';
+const LOOP_BAR_RISE = 16;   // px the loop boundary bars rise ABOVE the top staff line, so the region is easy to spot
 function clearLoopMarkers() {
   for (const g of document.querySelectorAll('.loop-marker')) g.remove();
 }
 function repeatSign(box, x, kind) {
   // kind: 'begin' (bar on the left, dots to the right) | 'end' (dots left, bar right).
+  // The two bars run from a little ABOVE the top staff line down to the bottom line,
+  // so each loop edge reads as a tall vertical marker bracketing the practice region;
+  // the dots stay at staff height to keep the musical repeat-sign look.
   const g = document.createElementNS(SVG_NS, 'g');
   g.setAttribute('class', 'loop-marker');
   g.setAttribute('pointer-events', 'none');
   const yT = box.yTop, yB = box.yBottom, h = yB - yT;
+  const barTop = yT - LOOP_BAR_RISE;          // rise above the 5 staff lines
+  const barH = yB - barTop;
   const dotY1 = yT + h * (1.5 / 4), dotY2 = yT + h * (2.5 / 4);
   const dir = kind === 'begin' ? 1 : -1;
   const thickW = 3.2, thinW = 1.2, gap = 2.6, dotGap = 5, dotR = 2.1;
@@ -1259,13 +1269,13 @@ function repeatSign(box, x, kind) {
   const thinX = kind === 'begin' ? x + thickW + gap : x - thickW - gap - thinW;
   const dotX = kind === 'begin' ? thinX + thinW + dotGap : thinX - dotGap;
   const rect = document.createElementNS(SVG_NS, 'rect');
-  rect.setAttribute('x', thickX); rect.setAttribute('y', yT);
-  rect.setAttribute('width', thickW); rect.setAttribute('height', h);
+  rect.setAttribute('x', thickX); rect.setAttribute('y', barTop);
+  rect.setAttribute('width', thickW); rect.setAttribute('height', barH);
   rect.setAttribute('fill', LOOP_BLUE);
   g.appendChild(rect);
   const line = document.createElementNS(SVG_NS, 'rect');
-  line.setAttribute('x', thinX); line.setAttribute('y', yT);
-  line.setAttribute('width', thinW); line.setAttribute('height', h);
+  line.setAttribute('x', thinX); line.setAttribute('y', barTop);
+  line.setAttribute('width', thinW); line.setAttribute('height', barH);
   line.setAttribute('fill', LOOP_BLUE);
   g.appendChild(line);
   for (const dy of [dotY1, dotY2]) {
@@ -1300,7 +1310,7 @@ function applyLoop() {
   let s = parseInt(sEl && sEl.value, 10), e = parseInt(eEl && eEl.value, 10);
   if (!Number.isFinite(s) || !Number.isFinite(e)) { setHint('Enter a start and end bar.'); return; }
   s = Math.max(1, Math.min(n, s)); e = Math.max(1, Math.min(n, e));
-  if (s > e) { const t = s; s = e; e = t; }
+  if (s > e) { const t = s; s = e; e = t; }   // the first loop bar is ALWAYS ≤ the last (reversed input is swapped)
   let f = parseInt(fEl && fEl.value, 10);
   if (!Number.isFinite(f) || f < 0) f = 0;
   f = Math.min(4, f);
@@ -1441,17 +1451,30 @@ function onResize() {
   }, 200);
 }
 
-// ── Print to Letter (portrait) ────────────────────────────────────────────────
+// ── Print to Letter ───────────────────────────────────────────────────────────
 // Re-lay the score forcing 4 bars/row (a phone-width screen is in 2-bar mode, but
 // the printout always wants the full structure), then `.row svg { width:100% }`
-// scales each system down to the page width. enterPrint/exitPrint are idempotent
-// and reached three ways for cross-browser cover: the Print button, the
-// beforeprint/afterprint events (desktop), and a matchMedia('print') change
-// (iPad Safari, which doesn't reliably fire beforeprint). Print also uses a tighter
-// row crop (PRINT_ROW_HEIGHT) so rows pack closer vertically — fewer pages.
+// scales each system down to the page width. LANDSCAPE is the default: a Letter page
+// is wider that way, so 4 bars/row come out ~1.3× larger and more readable; PORTRAIT
+// stays available for fewer pages. The chosen orientation is written into an injected
+// `@page` rule before printing. enterPrint/exitPrint are idempotent and reached three
+// ways for cross-browser cover: the Print buttons, beforeprint/afterprint (desktop),
+// and a matchMedia('print') change (iPad Safari). Print also uses a tighter row crop
+// (PRINT_ROW_HEIGHT) so rows pack closer vertically — fewer pages.
 let _printing = false;
+let PRINT_ORIENTATION = 'landscape';   // 'landscape' (default, larger staff) | 'portrait'
 
-function enterPrint() {
+// Write the page orientation + small margins into an injected stylesheet so the
+// browser's print picks them up (a static @page can't be toggled at runtime).
+function setPageStyle(orientation) {
+  let el = document.getElementById('page-style');
+  if (!el) { el = document.createElement('style'); el.id = 'page-style'; document.head.appendChild(el); }
+  el.textContent = '@page { size: letter ' + orientation + '; margin: 0.3in 0.25in; }';
+}
+
+function enterPrint(orientation) {
+  if (orientation) PRINT_ORIENTATION = orientation;
+  setPageStyle(PRINT_ORIENTATION);
   if (_printing || !SCORE_REF) return;
   _printing = true;
   if (BAR_RECT) BAR_RECT.style.display = 'none';
@@ -1479,9 +1502,13 @@ function setupPrint(score) {
     hdr.querySelector('.pt').textContent = `${score.artist} — ${score.title}`;
     hdr.querySelector('.ps').textContent = sub.join('  ·  ');
   }
-  const btn = document.getElementById('printbtn');
-  if (btn) btn.addEventListener('click', () => { closeMoreMenu(); enterPrint(); setTimeout(() => window.print(), 60); });
-  window.addEventListener('beforeprint', enterPrint);
+  const doPrint = orientation => { closeMoreMenu(); enterPrint(orientation); setTimeout(() => window.print(), 60); };
+  const pL = document.getElementById('printLandscape');
+  if (pL) pL.addEventListener('click', () => doPrint('landscape'));
+  const pP = document.getElementById('printPortrait');
+  if (pP) pP.addEventListener('click', () => doPrint('portrait'));
+  setPageStyle(PRINT_ORIENTATION);                        // sensible default for a direct Ctrl+P
+  window.addEventListener('beforeprint', () => enterPrint());
   window.addEventListener('afterprint', exitPrint);
   const mq = window.matchMedia && window.matchMedia('print');
   if (mq) {

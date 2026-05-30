@@ -120,7 +120,8 @@
        system down to the page width. Tiny page margins use the full width; the row
        crop keeps the vertical gaps small so more rows pack per page. */
     @media print {
-      @page { size: letter portrait; margin: 0.3in 0.25in; }
+      /* @page (size + orientation + margins) is injected at runtime by setPageStyle()
+         so the user can choose landscape (default) or portrait. */
       html, body { background: #fff; }
       #dock, #errlog { display: none !important; }
       #cursor-bar { display: none !important; }
@@ -175,7 +176,8 @@
       <div class="more-wrap">
         <button id="morebtn" aria-label="More" aria-haspopup="true">⋮</button>
         <div id="moremenu" hidden>
-          <button id="printbtn">Print</button>
+          <button id="printLandscape">Print — landscape</button>
+          <button id="printPortrait">Print — portrait</button>
           <a class="back" href="../index.html">‹ All songs</a>
         </div>
       </div>
