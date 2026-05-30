@@ -346,19 +346,15 @@ function buildMeasureTickables(measure) {
       n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: -1 });
       for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
 
-      // Ghost notes parenthesize that notehead; accent = strongest in the chord
-      // (drawn later as a uniform top band).
-      let maxAccent = 0, hasGhost = false;
+      // Ghost notes: render the notehead in grey instead of parenthesising it —
+      // "quieter = fainter", and far more compact than ( ) in dense 16th runs.
+      // accent = strongest in the chord (drawn later as a uniform top band).
+      let maxAccent = 0;
       chord.forEach((c, j) => {
-        if (c.dn.ghost) {
-          n.addModifier(new VF.Parenthesis(VF.ModifierPosition.LEFT), j);
-          n.addModifier(new VF.Parenthesis(VF.ModifierPosition.RIGHT), j);
-          hasGhost = true;
-        }
+        if (c.dn.ghost) n.setKeyStyle(j, { fillStyle: GHOST_COLOR, strokeStyle: GHOST_COLOR });
         if (c.dn.accent > maxAccent) maxAccent = c.dn.accent;
       });
       n.__accent = maxAccent;
-      n.__hasGhost = hasGhost;   // parentheses widen the head — floors its min width
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
     }
@@ -400,6 +396,7 @@ const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric base
 // — staff, stems, beams, accents, section labels — is grey, so the eye lands
 // on the notes.
 const NOTE_COLOR = '#1a1a1a';
+const GHOST_COLOR = '#9a9a9a';   // ghost noteheads: clearly fainter than the black hits, darker than the staff
 const STAVE_COLOR = '#b6b6b6';
 const STAVE_LINE_WIDTH = 1;
 const STEM_COLOR = '#8c8c8c';
@@ -530,14 +527,11 @@ function buildMeasure(m, lyrics) {
       minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
     } catch (e) { console.warn('minwidth failed m', m.index, e); }
 
-    // Floor the bar's min width by its note count — ghost noteheads carry
-    // parentheses that VexFlow's preCalc under-reserves. This makes the packer
-    // give a dense 16th run (e.g. Come As You Are's Refrain) enough room, putting
-    // FEWER such bars per row on a narrow window instead of crowding them. At a
+    // Floor the bar's min width by its note count (~one notehead + breathing room
+    // each), so the packer gives a dense 16th run (e.g. Come As You Are's Refrain)
+    // enough room — FEWER bars per row on a narrow window instead of crowding. At a
     // wide window the floor doesn't bind, so the spacious look is unchanged.
-    let floor = 0;
-    for (const n of notes) floor += (n.__hasGhost ? 30 : 17);
-    minW = Math.max(minW, floor);
+    minW = Math.max(minW, notes.length * 17);
   }
   return { m, notes, voice, minW, tuplets };
 }
