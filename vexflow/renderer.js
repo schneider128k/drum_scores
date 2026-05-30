@@ -935,7 +935,14 @@ function renderScore(score, container, opts) {
     rowDiv.className = 'row';
     container.appendChild(rowDiv);
     const rowWeight = rowBuilt.reduce((s, b) => s + weightOf(b.m), 0);
-    const fillFrac = fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1;
+    // A row with the full count of bars justifies to the FULL width even if it carries
+    // a short bar (e.g. a 2/4 intro bar would otherwise make the whole row ~13% narrower
+    // than the 4/4 rows below it — the Zombie / Square Hammer intro). Bars inside stay
+    // proportional to duration (a 2/4 bar is still half a 4/4 bar, so the cursor keeps a
+    // constant pixel speed within the row). Genuine SHORT rows — a section tail or a
+    // forced break with fewer bars — stay at proportional, left-aligned width.
+    const isFullRow = rowBuilt.length >= barsPerRow;
+    const fillFrac = isFullRow ? 1 : (fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1);
     try {
       const rec = renderRow(rowBuilt, idx, rowDiv, W, fillFrac, rowHeight, rowTop);
       if (rec) ROWS.push(rec);
@@ -1000,20 +1007,55 @@ function makeBar() {
   ACTIVE_ROW = 0;
 }
 
-// Interpolate the bar's x within a row from score-seconds, between the two
-// bracketing anchors. `row._hint` caches the last segment so the common
-// forward case is O(1).
+// Monotone cubic (Fritsch–Carlson) tangents for the (seconds → x) anchor data.
+// Piecewise-linear interpolation makes the cursor's pixel VELOCITY step at every
+// note and jump at every bar line (the recording's per-measure tempo changes) — what
+// reads as a slight "acceleration at the end of a measure". A monotone cubic Hermite
+// gives a CONTINUOUS velocity (C1) instead, yet on collinear data (a steady passage)
+// the tangents equal the common slope so it stays exactly linear — no wiggle where the
+// tempo is constant — and the Fritsch–Carlson limiter guarantees the result never
+// reverses (the cursor can't step backwards). Anchors are strictly increasing in both
+// seconds and x, so every secant slope is positive.
+function monotoneTangents(s, x) {
+  const n = s.length, m = new Array(n);
+  if (n < 2) { m[0] = 0; return m; }
+  const d = new Array(n - 1);
+  for (let i = 0; i < n - 1; i++) {
+    const ds = s[i + 1] - s[i];
+    d[i] = ds > 0 ? (x[i + 1] - x[i]) / ds : 0;
+  }
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = (d[i - 1] * d[i] <= 0) ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i], sq = a * a + b * b;
+    if (sq > 9) { const tau = 3 / Math.sqrt(sq); m[i] = tau * a * d[i]; m[i + 1] = tau * b * d[i]; }
+  }
+  return m;
+}
+
+// Interpolate the bar's x within a row from score-seconds, between the two bracketing
+// anchors, with the monotone cubic above. `row._hint` caches the last segment so the
+// common forward case is O(1); the tangents are computed once per row and cached.
 function xAtTime(row, t) {
-  const a = row.anchors;
+  const a = row.anchors, n = a.length;
   if (t <= a[0].seconds) return a[0].x;
-  if (t >= a[a.length - 1].seconds) return a[a.length - 1].x;
+  if (t >= a[n - 1].seconds) return a[n - 1].x;
+  if (!row._mt) {
+    row._ss = a.map(p => p.seconds);
+    row._sx = a.map(p => p.x);
+    row._mt = monotoneTangents(row._ss, row._sx);
+  }
   let i = row._hint || 0;
-  if (i >= a.length - 1 || a[i].seconds > t) i = 0;
-  while (i < a.length - 1 && a[i + 1].seconds <= t) i++;
+  if (i >= n - 1 || a[i].seconds > t) i = 0;
+  while (i < n - 1 && a[i + 1].seconds <= t) i++;
   row._hint = i;
-  const s0 = a[i].seconds, s1 = a[i + 1].seconds;
-  const f = s1 > s0 ? (t - s0) / (s1 - s0) : 0;
-  return a[i].x + f * (a[i + 1].x - a[i].x);
+  const s0 = a[i].seconds, s1 = a[i + 1].seconds, h = s1 - s0;
+  if (h <= 0) return a[i].x;
+  const u = (t - s0) / h, u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u;
+  const h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+  return h00 * a[i].x + h10 * h * row._mt[i] + h01 * a[i + 1].x + h11 * h * row._mt[i + 1];
 }
 
 function updateBar(t) {
