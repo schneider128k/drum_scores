@@ -348,15 +348,17 @@ function buildMeasureTickables(measure) {
 
       // Ghost notes parenthesize that notehead; accent = strongest in the chord
       // (drawn later as a uniform top band).
-      let maxAccent = 0;
+      let maxAccent = 0, hasGhost = false;
       chord.forEach((c, j) => {
         if (c.dn.ghost) {
           n.addModifier(new VF.Parenthesis(VF.ModifierPosition.LEFT), j);
           n.addModifier(new VF.Parenthesis(VF.ModifierPosition.RIGHT), j);
+          hasGhost = true;
         }
         if (c.dn.accent > maxAccent) maxAccent = c.dn.accent;
       });
       n.__accent = maxAccent;
+      n.__hasGhost = hasGhost;   // parentheses widen the head — floors its min width
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
     }
@@ -527,6 +529,15 @@ function buildMeasure(m, lyrics) {
     try {
       minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
     } catch (e) { console.warn('minwidth failed m', m.index, e); }
+
+    // Floor the bar's min width by its note count — ghost noteheads carry
+    // parentheses that VexFlow's preCalc under-reserves. This makes the packer
+    // give a dense 16th run (e.g. Come As You Are's Refrain) enough room, putting
+    // FEWER such bars per row on a narrow window instead of crowding them. At a
+    // wide window the floor doesn't bind, so the spacious look is unchanged.
+    let floor = 0;
+    for (const n of notes) floor += (n.__hasGhost ? 30 : 17);
+    minW = Math.max(minW, floor);
   }
   return { m, notes, voice, minW, tuplets };
 }
@@ -1150,6 +1161,21 @@ function wireControls() {
   const faster = document.getElementById('faster');
   if (slower) slower.addEventListener('click', () => setRate(-1));
   if (faster) faster.addEventListener('click', () => setRate(+1));
+
+  // Overflow (⋮) menu: toggle on its button, close on any outside click.
+  const moreBtn = document.getElementById('morebtn');
+  const moreMenu = document.getElementById('moremenu');
+  if (moreBtn && moreMenu) {
+    moreBtn.addEventListener('click', e => { e.stopPropagation(); moreMenu.hidden = !moreMenu.hidden; });
+    document.addEventListener('click', e => {
+      if (!moreMenu.hidden && !moreMenu.contains(e.target) && e.target !== moreBtn) moreMenu.hidden = true;
+    });
+  }
+}
+
+function closeMoreMenu() {
+  const m = document.getElementById('moremenu');
+  if (m) m.hidden = true;
 }
 
 function buildMeasureTimeline(score) {
@@ -1207,7 +1233,7 @@ function setupPrint(score) {
     hdr.querySelector('.ps').textContent = sub.join('  ·  ');
   }
   const btn = document.getElementById('printbtn');
-  if (btn) btn.addEventListener('click', () => { enterPrint(); setTimeout(() => window.print(), 60); });
+  if (btn) btn.addEventListener('click', () => { closeMoreMenu(); enterPrint(); setTimeout(() => window.print(), 60); });
   window.addEventListener('beforeprint', enterPrint);
   window.addEventListener('afterprint', exitPrint);
   const mq = window.matchMedia && window.matchMedia('print');
@@ -1227,12 +1253,10 @@ function boot() {
   }
   SCORE_REF = score;
   document.title = `${score.artist} — ${score.title}`;
-  const h = document.getElementById('heading');
   const st = document.getElementById('status');
-  if (h) h.textContent = `${score.artist} — ${score.title}`;
-  // Status doubles as the pre-play subheading; updateStatus overwrites it with
-  // the live bar/section readout once the cursor is running.
-  if (st) st.textContent = `${score.measures.length} bars · ${score.tempo_changes[0]?.bpm ?? '?'} bpm`;
+  // The status line shows the song before play and the live bar/section readout
+  // once the cursor is running (updateStatus overwrites it).
+  if (st) st.textContent = `${score.artist} — ${score.title}`;
 
   // Timing before render — renderRow reads SCHED to lay down the cursor anchors.
   SCHED = buildSecondsAt(score);

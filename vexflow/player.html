@@ -19,43 +19,67 @@
     .row { display: block; margin: 0; }
     .row svg { display: block; }
 
-    /* Slim set-and-forget control dock, pinned to the bottom edge (thumb reach on
-       an iPad). One row of controls, with the hint line collapsing above it. */
+    /* Set-and-forget control dock pinned to the bottom edge (thumb reach on an
+       iPad): a green transport HERO, the live Bar/Section readout, the speed
+       stepper, the video, and an overflow (⋮) holding Print + All songs. */
     #dock {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-      display: flex; flex-direction: column; gap: 6px;
+      display: flex; flex-direction: column; gap: 4px;
       background: rgba(250,250,250,0.97);
       backdrop-filter: saturate(1.2) blur(6px);
       border-top: 1px solid #e2e2e2;
-      padding: 8px 3%;
+      padding: 7px 3% 9px;
     }
+    /* Top line: the live readout, plus the ad/Sync hint when there is one. */
+    .dock-top { display: flex; align-items: baseline; gap: 12px; min-height: 16px; }
+    #status { font-size: 13px; font-weight: 600; color: #555; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint { font-size: 12px; color: #1f8f43; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint:empty { display: none; }
+
     .dock-row { display: flex; align-items: center; gap: 14px; }
-    #yt { width: 160px; height: 90px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
-    #yt iframe { border-radius: 6px; }
+    /* Transport hero — the most-pressed control: large, green, unmistakable. */
     #transport {
-      min-height: 44px; min-width: 104px; padding: 0 18px;
-      font-size: 16px; font-weight: 600;
-      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer;
+      min-height: 54px; min-width: 116px; padding: 0 22px;
+      font-size: 17px; font-weight: 700;
+      border: 0; border-radius: 14px;
+      background: #36b35a; color: #fff; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.12);
     }
-    #transport:disabled { opacity: 0.45; cursor: default; }
-    #transport.attention { border-color: #36b35a; color: #1f8f43; box-shadow: 0 0 0 3px rgba(54,179,90,0.15); }
+    #transport:disabled { background: #cbcbcb; cursor: default; box-shadow: none; }
+    #transport.attention { background: #1f8f43; box-shadow: 0 0 0 4px rgba(54,179,90,0.22); }
     .speed { display: inline-flex; align-items: center; gap: 6px; }
+    .speed .cap { font-size: 12px; color: #999; margin-right: 2px; }
     .speed button {
       min-height: 44px; min-width: 44px; font-size: 20px; line-height: 1;
       border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; cursor: pointer;
     }
-    #rate { min-width: 48px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
-    #printbtn {
-      min-height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600;
-      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer; flex: 0 0 auto;
+    #rate { min-width: 50px; text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .spacer { flex: 1 1 auto; }
+    #yt { width: 160px; height: 90px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
+    #yt iframe { border-radius: 6px; }
+    /* Overflow menu — rarely-used actions kept out of the resting dock. */
+    .more-wrap { position: relative; flex: 0 0 auto; }
+    #morebtn {
+      min-height: 44px; min-width: 44px; font-size: 22px; line-height: 1;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #555; cursor: pointer;
     }
-    .meta { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; line-height: 1.25; }
-    #heading { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #status { font-size: 12px; color: #777; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .back { color: #9aa0a6; text-decoration: none; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
-    .back:hover { color: #0066cc; }
-    #hint { font-size: 12px; color: #1f8f43; }
-    #hint:empty { display: none; }
+    #moremenu {
+      position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 11;
+      display: flex; flex-direction: column; gap: 4px; min-width: 150px;
+      background: #fff; border: 1px solid #d8d8d8; border-radius: 12px; padding: 6px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.16);
+    }
+    #moremenu[hidden] { display: none; }
+    #moremenu button, #moremenu a {
+      display: block; text-align: left; text-decoration: none;
+      font: inherit; font-size: 15px; color: #1a1a1a;
+      padding: 11px 12px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; white-space: nowrap;
+    }
+    #moremenu button:hover, #moremenu a:hover { background: #f0f0f0; }
+    @media (max-width: 700px) {
+      #yt { width: 120px; height: 68px; }
+      #transport { min-width: 96px; padding: 0 16px; }
+    }
     #errlog { color: #c00; background: #ffe; padding: 8px; margin: 8px 3%; border-radius: 4px; white-space: pre-wrap; display: none; }
 
     /* Print header — only appears in the printout (above the first row). */
@@ -84,21 +108,27 @@
   <div id="score"></div>
 
   <div id="dock">
-    <div id="hint"></div>
+    <div class="dock-top">
+      <span id="status">Loading…</span>
+      <span id="hint"></span>
+    </div>
     <div class="dock-row">
       <button id="transport" disabled>▶ Play</button>
       <span class="speed">
+        <span class="cap">Speed</span>
         <button id="slower" aria-label="Slower">−</button>
         <span id="rate">100%</span>
         <button id="faster" aria-label="Faster">+</button>
       </span>
-      <span class="meta">
-        <span id="heading">Loading…</span>
-        <span id="status"></span>
-      </span>
-      <button id="printbtn">Print</button>
-      <a class="back" href="../index.html">‹ All songs</a>
+      <span class="spacer"></span>
       <div id="yt"></div>
+      <div class="more-wrap">
+        <button id="morebtn" aria-label="More" aria-haspopup="true">⋮</button>
+        <div id="moremenu" hidden>
+          <button id="printbtn">Print</button>
+          <a class="back" href="../index.html">‹ All songs</a>
+        </div>
+      </div>
     </div>
   </div>
 
