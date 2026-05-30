@@ -31,6 +31,10 @@ VF.STEM_WIDTH = 1.1;
 //        startSec, endSec, yTop, yBottom }, populated by renderRow.
 let SCHED = null;
 let ROWS = [];
+// One box per rendered measure, in viewBox user-units of its row's <svg>:
+// { index, x0, x1, svg, yTop, yBottom }. Cleared and repopulated every renderScore;
+// drawLoopMarkers() reads it to place the blue begin/end repeat signs.
+let MEASURE_BOXES = [];
 let OFFSET = 0;               // youtube_offset: video-seconds where score time 0 lands
 let YT_PLAYER = null;
 let YT_READY = false;
@@ -380,10 +384,21 @@ function buildMeasureTickables(measure) {
 
 const ROW_HEIGHT = 215;
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
+// Print packs rows closer vertically: the score content only spans ~[ROW_TOP-14 ..
+// lyric baseline], so for print we shift it up (smaller top inset) and crop the SVG
+// canvas just below the lyric line — cutting the empty headroom that caused the wide
+// gaps, without clipping section labels (top) or lyrics/beams (bottom).
+const PRINT_ROW_TOP = 16;
+const PRINT_ROW_HEIGHT = 168;
 const PAGE_WIDTH = 1100;     // fallback width when the container hasn't laid out yet
 const MIN_PAGE_WIDTH = 360;  // floor so a tiny window still renders something legible
 const CLEF_W = 70;           // width the clef + time signature eat on the first row
-const MAX_BARS_PER_ROW = 4;  // ceiling; the greedy breaker uses fewer when they don't fit
+// Fixed bars-per-row contract: the song's 4-/8-measure structure is the spine you
+// read its form down, so we ALWAYS pack a full BARS_PER_ROW per line and scale the
+// engraving down (uniform CSS scale, below) to make them fit — never fewer-to-fit.
+const BARS_PER_ROW = 4;      // iPad (either orientation) and print
+const NARROW_BARS = 2;       // phones: 2 bars/row still keeps measure pairs together
+const NARROW_BP = 700;       // px: container narrower than this is treated as a phone
 const SIDE_MARGIN = 10;
 const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
@@ -625,16 +640,27 @@ function applyProportionalSpacing(voice, usable) {
 // (forced break, or a partial tail) lays out at its natural width, left-aligned,
 // like a paragraph's last line — so a lone bar never smears across the screen and
 // repeated phrases stack in aligned columns.
-function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
+function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, rowTop) {
+  rowHeight = rowHeight || ROW_HEIGHT;
+  rowTop = rowTop || ROW_TOP;
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
-  renderer.resize(pageWidth, ROW_HEIGHT);
+  renderer.resize(pageWidth, rowHeight);
   const ctx = renderer.getContext();
-  // A viewBox (matching the px size, so 1:1 on screen) lets print CSS scale the
-  // row to the paper width via `.row svg { width: 100% }` — the fallback for when
-  // beforeprint can't re-render (iPad Safari). On screen the svg isn't CSS-scaled,
-  // so the cursor's px == user-unit assumption is unaffected.
+  // Every row is rendered at the same internal width `pageWidth` (= the uniform W
+  // from renderScore) and a viewBox to match, then `.row svg { width:100% }` scales
+  // the whole system DOWN to the container (screen) or page (print). The cursor and
+  // its note anchors are both in these viewBox user-units, so they scale together —
+  // the bar still lands on the note under any CSS scale.
   const svgEl = container.querySelector('svg');
-  if (svgEl) svgEl.setAttribute('viewBox', '0 0 ' + pageWidth + ' ' + ROW_HEIGHT);
+  if (svgEl) {
+    svgEl.setAttribute('viewBox', '0 0 ' + pageWidth + ' ' + rowHeight);
+    // VexFlow's resize() writes an inline `style="width:<W>px;height:<H>px"`, which
+    // would beat the `.row svg { width:100% }` stylesheet rule and let the row render
+    // at full internal width (overflowing the screen). Clear it so the CSS scale wins;
+    // the width/height ATTRIBUTES stay to give the browser the aspect ratio.
+    svgEl.style.width = '';
+    svgEl.style.height = '';
+  }
 
   const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
   const fullAvail = pageWidth - SIDE_MARGIN * 2 - clefWidth;   // hard cap: a row never exceeds the page
@@ -647,7 +673,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   const widths = allocateWidths(weights, floors, target, fullAvail);
 
   const rowLyrics = [];   // {x, text, cont} collected across the row, drawn last
-  let baselineY = ROW_TOP;
+  let baselineY = rowTop;
 
   // Playback-cursor anchors for this row: {seconds, x} at each notehead, plus a
   // single edge anchor at each END of the row. Interior bar lines deliberately
@@ -663,7 +689,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   for (let i = 0; i < built.length; i++) {
     const { m, notes, voice, tuplets } = built[i];
     const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
-    const stave = new VF.Stave(x, ROW_TOP, myWidth);
+    const stave = new VF.Stave(x, rowTop, myWidth);
     // Thin grey staff lines / barlines / clef / measure number.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
@@ -698,6 +724,16 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
       ctx.fillText(m.marker, stave.getNoteStartX(), stave.getYForLine(0) - SECTION_RISE);
       ctx.restore();
     }
+
+    // Record this measure's box (barline-to-barline x, staff top/bottom) so the
+    // loop's blue repeat signs can be overlaid later without a re-render.
+    MEASURE_BOXES.push({
+      index: m.index,
+      x0: x, x1: x + myWidth,
+      svg: svgEl,
+      yTop: stave.getYForLine(0),
+      yBottom: stave.getYForLine(4),
+    });
     x += myWidth;
 
     if (!voice) continue;
@@ -840,53 +876,59 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   };
 }
 
-function renderScore(score, container, forceWidth) {
+function renderScore(score, container, opts) {
+  opts = opts || {};
+  const print = !!opts.print;
   const measures = score.measures;
   const lyrics = score.lyrics || [];
   ROWS = [];
+  MEASURE_BOXES = [];
   container.innerHTML = '';
 
-  // Size to the container (the iPad's real width); fall back to PAGE_WIDTH if it
-  // hasn't laid out yet. This is what makes the score fit any screen. `forceWidth`
-  // overrides it for print, where we lay rows out to the paper's printable width.
-  const pageWidth = forceWidth || Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
+  // Bars per row is FIXED (not derived from fitting widths): 4 on iPad and print,
+  // 2 on a phone-width screen. The container width only decides which of those two
+  // regimes we're in — it never changes the count within a regime.
+  const cw = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
+  const barsPerRow = print ? BARS_PER_ROW : (cw < NARROW_BP ? NARROW_BARS : BARS_PER_ROW);
+  const rowHeight = print ? PRINT_ROW_HEIGHT : ROW_HEIGHT;
+  const rowTop = print ? PRINT_ROW_TOP : ROW_TOP;
 
-  // Build every measure once, then greedily pack measures into rows: at most
-  // MAX_BARS_PER_ROW, fewer when the next bar wouldn't fit COMFORTABLY, AND a
-  // forced break before every section marker so each section (Intro / Verse /
-  // Chorus …) starts flush-left on its own line. That left margin becomes the
-  // spine you read the song's form down, and an 8-bar section lands as two
-  // stacked rows of 4 — repeated phrases line up vertically instead of drifting
-  // mid-row. Packing only to each bar's *minimum* legible width (scale ≈ 1) reads
-  // as crowded, so we require every row to stay at ≥ COMFORT × the minimum —
-  // dense or lyric-heavy bars (and narrow screens) then get fewer per row, with
-  // air around every note, like Songsterr. No manual knob; never wider than screen.
-  const COMFORT = 1.6;
+  // Build every measure once, then pack exactly `barsPerRow` bars per row, with a
+  // forced break before every section marker so each section starts flush-left on
+  // its own line (the spine you read the song's form down; an 8-bar section lands
+  // as two stacked rows of 4 so repeated phrases line up vertically). No comfort
+  // gate — crowding is handled by the uniform scale below, not by taking fewer bars.
   const weightOf = m => m.duration[0] / m.duration[1];
   const builtAll = measures.map(m => buildMeasure(m, lyrics));
-  const usableFirst = (pageWidth - SIDE_MARGIN * 2 - CLEF_W) / COMFORT;
-  const usableRest = (pageWidth - SIDE_MARGIN * 2) / COMFORT;
   const rows = [];
-  let cur = [], curW = 0;
+  let cur = [];
   for (const b of builtAll) {
-    const usable = (rows.length === 0) ? usableFirst : usableRest;
     const newSection = !!b.m.marker;   // every marked measure opens a fresh line
-    if (cur.length && (newSection || cur.length >= MAX_BARS_PER_ROW || curW + b.minW > usable)) {
-      rows.push(cur); cur = []; curW = 0;
+    if (cur.length && (newSection || cur.length >= barsPerRow)) {
+      rows.push(cur); cur = [];
     }
-    cur.push(b); curW += b.minW;
+    cur.push(b);
   }
   if (cur.length) rows.push(cur);
 
-  // A "full" row = MAX_BARS_PER_ROW bars of the song's most common meter; that
-  // fills the page. Rows carrying less musical time (a short section, a partial
-  // tail, the 2/4 intro) fill proportionally less and sit left-aligned, so one
-  // whole-note occupies the same width in every row and the columns align.
+  // One uniform internal width W for EVERY row: barsPerRow of the single densest
+  // bar (its min legible width) plus margins and the first-row clef. Rendering all
+  // rows at W and letting `.row svg { width:100% }` scale them to the container/page
+  // means the whole score shares one staff size, sized so even a full row of the
+  // densest bar is uncrowded. Denser songs simply scale smaller (= the requested
+  // "scale everything down so nothing crowds"); sparse songs barely shrink.
+  let maxBarFloor = 1;
+  for (const b of builtAll) if (b.minW > maxBarFloor) maxBarFloor = b.minW;
+  const W = Math.round(barsPerRow * maxBarFloor + SIDE_MARGIN * 2 + CLEF_W);
+
+  // A "full" row = barsPerRow bars of the song's most common meter; that fills W.
+  // Rows carrying less musical time (a short section, a partial tail, the 2/4 intro)
+  // fill proportionally less and sit left-aligned, so columns align across rows.
   const freq = new Map();
   for (const m of measures) { const w = weightOf(m); freq.set(w, (freq.get(w) || 0) + 1); }
   let modalW = 1, best = -1;
   for (const [w, c] of freq) { if (c > best) { best = c; modalW = w; } }
-  const fullRowWeight = MAX_BARS_PER_ROW * modalW;
+  const fullRowWeight = barsPerRow * modalW;
 
   rows.forEach((rowBuilt, idx) => {
     const rowDiv = document.createElement('div');
@@ -895,7 +937,7 @@ function renderScore(score, container, forceWidth) {
     const rowWeight = rowBuilt.reduce((s, b) => s + weightOf(b.m), 0);
     const fillFrac = fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1;
     try {
-      const rec = renderRow(rowBuilt, idx, rowDiv, pageWidth, fillFrac);
+      const rec = renderRow(rowBuilt, idx, rowDiv, W, fillFrac, rowHeight, rowTop);
       if (rec) ROWS.push(rec);
     } catch (e) {
       rowDiv.textContent = '[row render error: ' + e.message + ']';
@@ -1037,9 +1079,12 @@ function startBarLoop() {
   let lastStatus = 0;
   const frame = () => {
     // SYNCED gates out the preroll-ad window: until the user taps Sync, the bar
-    // stays parked at beat 1 even while the video (or its ad) is playing.
-    if (YT_READY && SYNCED && IS_PLAYING) {
-      const tau = performance.now() / 1000;
+    // stays parked at beat 1 even while the video (or its ad) is playing. A loop
+    // seek briefly drops YT out of PLAYING (buffering) — keep advancing through that
+    // window so the bar doesn't freeze at the seam.
+    const tau = performance.now() / 1000;
+    const loopSeeking = LOOP_ON && tau < LOOP_SEEK_UNTIL;
+    if (YT_READY && SYNCED && (IS_PLAYING || loopSeeking)) {
       clkPredict(tau);                 // advance the smooth phase
       clkCorrect();                    // fuse a fresh YT sample if there is one
       let t = CLK_M + LATENCY_LEAD;
@@ -1047,19 +1092,19 @@ function startBarLoop() {
       // gain tuning. A seek/resync releases it (CLK_OUT was reset in clkHardSet).
       if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
 
-      // Loop: seek back the instant the audio reaches the loop end — judged by the
-      // smooth, per-frame clock (CLK_M), NOT the ~250ms-quantised getCurrentTime
-      // that let the bar sail past the bar line into the next measure. Until the
-      // seek fires, pin the bar just short of the end bar line so it never tips
-      // into the next measure (the overshoot bug).
+      // Loop: seek back the instant the audio reaches the PLAY end (block end + the
+      // fade-out bars) — judged by the smooth, per-frame clock (CLK_M). Until the
+      // seek fires, pin the bar just short of the play-end bar line. Volume rides the
+      // fade envelope across the whole play range.
       let shown = t;
       if (LOOP_ON) {
-        if (tau >= LOOP_SEEK_UNTIL && CLK_M >= LOOP_END_SEC) {
+        if (tau >= LOOP_SEEK_UNTIL && CLK_M >= LOOP_PLAY_END_SEC) {
           seekToLoopStart();
-          shown = LOOP_SEEK_SEC;                          // snap the bar back this same frame
-        } else if (shown > LOOP_END_SEC - LOOP_EDGE_EPS) {
-          shown = LOOP_END_SEC - LOOP_EDGE_EPS;           // hold at the end edge
+          shown = LOOP_SEEK_SEC;                            // snap the bar back this same frame
+        } else if (shown > LOOP_PLAY_END_SEC - LOOP_EDGE_EPS) {
+          shown = LOOP_PLAY_END_SEC - LOOP_EDGE_EPS;        // hold at the play-end edge
         }
+        applyLoopFade(shown);
       }
       updateBar(shown);
       if (tau - lastStatus > 0.2) { updateStatus(shown); lastStatus = tau; }
@@ -1127,26 +1172,38 @@ function doSync() {
 // preroll ad. The loop is independent of Play/Sync: you still press Play, wait
 // out any ad, and tap Sync — only then (and on each pass) do we seek.
 let LOOP_ON = false;
-let LOOP_COUNTIN = false;                   // play the bar before the block as a lead-in
-let LOOP_START = 0, LOOP_END = 0;          // measure numbers, 1-based as printed
-let LOOP_START_SEC = 0, LOOP_END_SEC = 0;  // score-seconds of the repeat block's edges
-let LOOP_SEEK_SEC = 0;                      // where a loop-back seeks to (= block start, or one bar earlier for count-in)
+let LOOP_FADE_BARS = 1;                     // measures of fade-in before / fade-out after the block (0 = hard cut)
+let LOOP_START = 0, LOOP_END = 0;          // measure numbers, 1-based as printed — the repeat BLOCK
+let LOOP_START_SEC = 0, LOOP_END_SEC = 0;  // score-seconds of the repeat block's edges (drive the repeat signs)
+// The PLAY range extends the block by the fade bars on each side: we seek back to
+// PLAY_START (fading the audio up to the block) and only loop once we pass PLAY_END
+// (having faded the audio down past the block). The repeat signs stay on the block.
+let LOOP_PLAY_START_SEC = 0, LOOP_PLAY_END_SEC = 0;
+let LOOP_SEEK_SEC = 0;                      // where a loop-back seeks to (= PLAY_START)
 let LOOP_SEEK_UNTIL = 0;                    // perf-seconds: suppress end-checks + sensor fusion while a seek settles
+let LOOP_VOL = -1;                          // last YouTube volume we set (throttle: only call setVolume on an integer change)
 const LOOP_EDGE_EPS = 0.02;                 // s kept below the end bar line so the bar never tips into the next measure
 
 function measureByIndex(k) {
   return (SCORE_REF && SCORE_REF.measures.find(m => m.index === k)) || null;
 }
 function measureStartSec(m) { return SCHED.at(m.position[0] / m.position[1]); }
+function measureEndSec(m) { return SCHED.at(m.position[0] / m.position[1] + m.duration[0] / m.duration[1]); }
 function loopComputeSecs() {
   const a = measureByIndex(LOOP_START), b = measureByIndex(LOOP_END);
   if (!a || !b || !SCHED) return false;
   LOOP_START_SEC = measureStartSec(a);
-  LOOP_END_SEC = SCHED.at(b.position[0] / b.position[1] + b.duration[0] / b.duration[1]);
-  // Count-in: a loop-back lands one bar earlier (its real audio is the lead-in),
-  // but the repeat block — and the highlight — stay [START..END].
-  const ci = (LOOP_COUNTIN && LOOP_START > 1) ? measureByIndex(LOOP_START - 1) : a;
-  LOOP_SEEK_SEC = ci ? measureStartSec(ci) : LOOP_START_SEC;
+  LOOP_END_SEC = measureEndSec(b);
+  // Fade range: start the play F bars before the block (fade in) and run F bars past
+  // it (fade out), clamped to the song. F=0 collapses PLAY to the block (hard loop).
+  const measures = SCORE_REF.measures;
+  const firstIdx = measures[0].index, lastIdx = measures[measures.length - 1].index;
+  const preIdx = Math.max(firstIdx, LOOP_START - LOOP_FADE_BARS);
+  const postIdx = Math.min(lastIdx, LOOP_END + LOOP_FADE_BARS);
+  const pre = measureByIndex(preIdx), post = measureByIndex(postIdx);
+  LOOP_PLAY_START_SEC = pre ? measureStartSec(pre) : LOOP_START_SEC;
+  LOOP_PLAY_END_SEC = post ? measureEndSec(post) : LOOP_END_SEC;
+  LOOP_SEEK_SEC = LOOP_PLAY_START_SEC;
   return LOOP_END_SEC > LOOP_START_SEC;
 }
 function seekToLoopStart() {
@@ -1155,12 +1212,77 @@ function seekToLoopStart() {
   clkHardSet(LOOP_SEEK_SEC);                         // releases the monotonic latch so the bar may jump back
   LOOP_SEEK_UNTIL = performance.now() / 1000 + 0.6; // let the seek land before checking/fusing again
 }
-function highlightLoopRows() {
-  for (const r of ROWS) {
-    if (!r.div) continue;
-    const on = LOOP_ON && r.endSec > LOOP_START_SEC + 1e-3 && r.startSec < LOOP_END_SEC - 1e-3;
-    r.div.classList.toggle('looping', on);
+
+// Set the YouTube volume (0..100), throttled to integer changes so we don't spam
+// the iframe with a postMessage every animation frame.
+function setLoopVolume(v) {
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (v === LOOP_VOL) return;
+  LOOP_VOL = v;
+  try { if (YT_PLAYER && YT_PLAYER.setVolume) YT_PLAYER.setVolume(v); } catch (_) {}
+}
+// Volume envelope across the play range: ramp 0→100 over [PLAY_START..block start],
+// hold 100 across the block, ramp 100→0 over [block end..PLAY_END]. Called per frame
+// with the smooth clock; a zero-length fade edge (block at the song edge) is full.
+function applyLoopFade(t) {
+  if (!LOOP_ON || LOOP_FADE_BARS <= 0) { setLoopVolume(100); return; }
+  let v = 100;
+  const inLen = LOOP_START_SEC - LOOP_PLAY_START_SEC;
+  const outLen = LOOP_PLAY_END_SEC - LOOP_END_SEC;
+  if (inLen > 1e-3 && t < LOOP_START_SEC) {
+    v = 100 * Math.max(0, (t - LOOP_PLAY_START_SEC) / inLen);
+  } else if (outLen > 1e-3 && t > LOOP_END_SEC) {
+    v = 100 * Math.max(0, (LOOP_PLAY_END_SEC - t) / outLen);
   }
+  setLoopVolume(v);
+}
+function restoreVolume() { setLoopVolume(100); }
+
+// Draw (or clear) the blue musical repeat signs at the block's edges. A begin-repeat
+// (thick|thin bar + two dots) sits at the START measure's left barline, an end-repeat
+// (two dots + thin|thick bar) at the END measure's right barline. Drawn as an SVG
+// overlay from MEASURE_BOXES so no re-render is needed when the loop changes.
+const LOOP_BLUE = '#2f6fed';
+function clearLoopMarkers() {
+  for (const g of document.querySelectorAll('.loop-marker')) g.remove();
+}
+function repeatSign(box, x, kind) {
+  // kind: 'begin' (bar on the left, dots to the right) | 'end' (dots left, bar right).
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('class', 'loop-marker');
+  g.setAttribute('pointer-events', 'none');
+  const yT = box.yTop, yB = box.yBottom, h = yB - yT;
+  const dotY1 = yT + h * (1.5 / 4), dotY2 = yT + h * (2.5 / 4);
+  const dir = kind === 'begin' ? 1 : -1;
+  const thickW = 3.2, thinW = 1.2, gap = 2.6, dotGap = 5, dotR = 2.1;
+  const thickX = kind === 'begin' ? x : x - thickW;          // thick bar hugs the barline
+  const thinX = kind === 'begin' ? x + thickW + gap : x - thickW - gap - thinW;
+  const dotX = kind === 'begin' ? thinX + thinW + dotGap : thinX - dotGap;
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('x', thickX); rect.setAttribute('y', yT);
+  rect.setAttribute('width', thickW); rect.setAttribute('height', h);
+  rect.setAttribute('fill', LOOP_BLUE);
+  g.appendChild(rect);
+  const line = document.createElementNS(SVG_NS, 'rect');
+  line.setAttribute('x', thinX); line.setAttribute('y', yT);
+  line.setAttribute('width', thinW); line.setAttribute('height', h);
+  line.setAttribute('fill', LOOP_BLUE);
+  g.appendChild(line);
+  for (const dy of [dotY1, dotY2]) {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', dotX + dir * dotR); c.setAttribute('cy', dy);
+    c.setAttribute('r', dotR); c.setAttribute('fill', LOOP_BLUE);
+    g.appendChild(c);
+  }
+  box.svg.appendChild(g);
+}
+function drawLoopMarkers() {
+  clearLoopMarkers();
+  if (!LOOP_ON || !MEASURE_BOXES.length) return;
+  const startBox = MEASURE_BOXES.find(b => b.index === LOOP_START);
+  const endBox = MEASURE_BOXES.find(b => b.index === LOOP_END);
+  if (startBox) repeatSign(startBox, startBox.x0, 'begin');
+  if (endBox) repeatSign(endBox, endBox.x1, 'end');
 }
 function refreshLoopBtn() {
   const btn = document.getElementById('loopbtn');
@@ -1174,20 +1296,21 @@ function applyLoop() {
   if (!SCHED) { setHint('This song has no synced timing to loop.'); return; }
   const n = SCORE_REF ? SCORE_REF.measures.length : 0;
   const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
-  const ciEl = document.getElementById('loopCountin');
+  const fEl = document.getElementById('loopFade');
   let s = parseInt(sEl && sEl.value, 10), e = parseInt(eEl && eEl.value, 10);
   if (!Number.isFinite(s) || !Number.isFinite(e)) { setHint('Enter a start and end bar.'); return; }
   s = Math.max(1, Math.min(n, s)); e = Math.max(1, Math.min(n, e));
   if (s > e) { const t = s; s = e; e = t; }
-  LOOP_START = s; LOOP_END = e;
-  LOOP_COUNTIN = !!(ciEl && ciEl.checked);
-  if (sEl) sEl.value = s; if (eEl) eEl.value = e;
+  let f = parseInt(fEl && fEl.value, 10);
+  if (!Number.isFinite(f) || f < 0) f = 0;
+  f = Math.min(4, f);
+  LOOP_START = s; LOOP_END = e; LOOP_FADE_BARS = f;
+  if (sEl) sEl.value = s; if (eEl) eEl.value = e; if (fEl) fEl.value = f;
   if (!loopComputeSecs()) { setHint('Could not set that range.'); return; }
   LOOP_ON = true;
-  const withCi = LOOP_COUNTIN && s > 1;
-  setHint(`Looping bars ${s}–${e}${withCi ? ` (count-in from bar ${s - 1})` : ''}.`);
+  setHint(`Looping bars ${s}–${e}${f > 0 ? ` · fade ${f} bar${f > 1 ? 's' : ''}` : ''}.`);
   refreshLoopBtn();
-  highlightLoopRows();
+  drawLoopMarkers();
   if (SYNCED && IS_PLAYING) seekToLoopStart();   // already playing → jump to the region now
 }
 function clearLoop() {
@@ -1195,7 +1318,8 @@ function clearLoop() {
   const hint = document.getElementById('loopHint');
   if (hint) hint.textContent = '';
   refreshLoopBtn();
-  highlightLoopRows();
+  drawLoopMarkers();
+  restoreVolume();   // loop off → back to full volume
 }
 
 function setRate(delta) {
@@ -1236,9 +1360,15 @@ function initYt(videoId) {
       events: {
         onReady: () => { YT_READY = true; refreshTransport(); },
         onStateChange: (e) => {
+          // A loop-back seek makes YT flicker through BUFFERING/PAUSED before it
+          // resumes PLAYING. That transient is NOT a real pause: don't let it flip
+          // the transport button back to "Play" or re-anchor the clock to a stale
+          // pre-seek time (the seek already hard-set the clock to the loop start).
+          const loopSeeking = LOOP_ON && performance.now() / 1000 < LOOP_SEEK_UNTIL;
           IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
           if (IS_PLAYING) STARTED = true;            // play via the app button OR YouTube's own play → advance the button to Sync
-          if (IS_PLAYING && SYNCED) clkResync();
+          if (IS_PLAYING && SYNCED && !loopSeeking) clkResync();
+          if (loopSeeking && !IS_PLAYING) return;    // keep showing "⏸ Pause" across the seam
           refreshTransport();
         },
       },
@@ -1281,41 +1411,9 @@ function wireControls() {
   const lc = document.getElementById('loopClear');
   if (lc) lc.addEventListener('click', clearLoop);
 
-  // Part picker: choosing a section fills the from/to bars exactly and loops it.
-  const sec = document.getElementById('loopSection');
-  if (sec) sec.addEventListener('change', () => {
-    const m = sec.value.match(/^(\d+)-(\d+)$/);
-    if (!m) return;
-    const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
-    if (sEl) sEl.value = m[1];
-    if (eEl) eEl.value = m[2];
-    applyLoop();
-  });
-
-  // Count-in toggle: recompute the loop-back target (one bar earlier or not).
-  const ci = document.getElementById('loopCountin');
-  if (ci) ci.addEventListener('change', () => {
-    LOOP_COUNTIN = ci.checked;
-    if (LOOP_ON) { loopComputeSecs(); applyLoop(); }   // refresh hint + target
-  });
-}
-
-// Fill the part picker from the section markers: each part maps to its exact
-// first..last bar (the bar before the next marker, or the final bar).
-function populateLoopSections(score) {
-  const sel = document.getElementById('loopSection');
-  if (!sel) return;
-  const ms = score.measures;
-  const marked = ms.filter(m => m.marker);
-  const lastIdx = ms[ms.length - 1].index;
-  for (let i = 0; i < marked.length; i++) {
-    const start = marked[i].index;
-    const end = (i + 1 < marked.length) ? marked[i + 1].index - 1 : lastIdx;
-    const opt = document.createElement('option');
-    opt.value = start + '-' + end;
-    opt.textContent = `${marked[i].marker}  (${start}–${end})`;
-    sel.appendChild(opt);
-  }
+  // Fade-bars change: re-apply so the play range, hint, and (if playing) seek update.
+  const fade = document.getElementById('loopFade');
+  if (fade) fade.addEventListener('change', () => { if (LOOP_ON) applyLoop(); });
 }
 
 function closeMoreMenu() {
@@ -1339,28 +1437,26 @@ function onResize() {
   _resizeTimer = setTimeout(() => {
     renderScore(SCORE_REF, document.getElementById('score'));
     if (SCHED && ROWS.length) makeBar();   // re-attach the bar to the fresh rows
-    highlightLoopRows();                   // re-tint the looped rows after the rebuild
+    drawLoopMarkers();                     // re-draw the repeat signs after the rebuild
   }, 200);
 }
 
-// ── Print to Letter ───────────────────────────────────────────────────────────
-// Re-lay the score to the paper's printable width (~7.5in at 96dpi) so the line
-// breaks are right on the page, not the screen. enterPrint/exitPrint are
-// idempotent and reached three ways for cross-browser cover: the Print button,
-// the beforeprint/afterprint events (desktop), and a matchMedia('print') change
-// (iPad Safari, which doesn't reliably fire beforeprint).
-// Reference LAYOUT width for print: lay the score out here (a comfortable 4
-// bars/row, uncrowded), then the viewBox scales each system down to the ~7.5in
-// Letter-portrait printable area (≈720px) — like a publisher choosing a staff
-// size. Wider than the page on purpose: the scale-down is what shrinks the staff.
-const PRINT_WIDTH = 1080;
+// ── Print to Letter (portrait) ────────────────────────────────────────────────
+// Re-lay the score forcing 4 bars/row (a phone-width screen is in 2-bar mode, but
+// the printout always wants the full structure), then `.row svg { width:100% }`
+// scales each system down to the page width. enterPrint/exitPrint are idempotent
+// and reached three ways for cross-browser cover: the Print button, the
+// beforeprint/afterprint events (desktop), and a matchMedia('print') change
+// (iPad Safari, which doesn't reliably fire beforeprint). Print also uses a tighter
+// row crop (PRINT_ROW_HEIGHT) so rows pack closer vertically — fewer pages.
 let _printing = false;
 
 function enterPrint() {
   if (_printing || !SCORE_REF) return;
   _printing = true;
   if (BAR_RECT) BAR_RECT.style.display = 'none';
-  renderScore(SCORE_REF, document.getElementById('score'), PRINT_WIDTH);
+  renderScore(SCORE_REF, document.getElementById('score'), { print: true });
+  drawLoopMarkers();
 }
 
 function exitPrint() {
@@ -1368,6 +1464,7 @@ function exitPrint() {
   _printing = false;
   renderScore(SCORE_REF, document.getElementById('score'));   // back to screen width
   if (SCHED && ROWS.length) { makeBar(); if (BAR_RECT) BAR_RECT.style.display = ''; }
+  drawLoopMarkers();
 }
 
 function setupPrint(score) {
@@ -1416,7 +1513,6 @@ function boot() {
   renderScore(score, document.getElementById('score'));
 
   wireControls();
-  populateLoopSections(score);
   setupPrint(score);
   window.addEventListener('resize', onResize);
 
@@ -1427,13 +1523,18 @@ function boot() {
   }
   refreshTransport();
 
-  // Optional ?loop=<start>-<end> deep link (e.g. ?song=14_6&loop=27-30): pre-set
-  // a practice loop so it can be shared/bookmarked. Takes effect on the next Sync.
-  const lp = (new URLSearchParams(location.search).get('loop') || '').match(/^(\d+)-(\d+)$/);
+  // Optional ?loop=<start>-<end>[&fade=<n>] deep link (e.g. ?song=14_6&loop=27-30):
+  // pre-set a practice loop so it can be shared/bookmarked. Takes effect on the next
+  // Sync. The blue repeat signs render immediately.
+  const params = new URLSearchParams(location.search);
+  const lp = (params.get('loop') || '').match(/^(\d+)-(\d+)$/);
   if (lp && SCHED) {
     const sEl = document.getElementById('loopStart'), eEl = document.getElementById('loopEnd');
+    const fEl = document.getElementById('loopFade');
     if (sEl) sEl.value = lp[1];
     if (eEl) eEl.value = lp[2];
+    const fade = params.get('fade');
+    if (fEl && fade != null && /^\d+$/.test(fade)) fEl.value = fade;
     applyLoop();
   }
 }
