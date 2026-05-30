@@ -591,11 +591,23 @@ function applyProportionalSpacing(voice, usable) {
   const PAD = 4;
   const gap = i => half[i] + half[i + 1] + PAD;   // min centre-to-centre
 
+  // Feasibility: can the bar hold every note at its minimum centre-to-centre
+  // spacing? Dense 16th runs widened by ghost-note parentheses sometimes can't.
+  // If we forced the onset projection anyway, the backward pass below could place
+  // a LATER note left of an earlier one — non-monotonic x — which both crams the
+  // heads to one side and makes the playback cursor jump backwards. When it won't
+  // fit, keep VexFlow's own formatted positions (justified to fill, always
+  // monotonic) instead. (Come As You Are bars 27-29/31-32.)
+  let need = half[0] + half[n - 1];
+  for (let i = 0; i < n - 1; i++) need += gap(i);
+  if (need > usable) return;
+
   const x = ideal.slice();
   x[0] = Math.max(half[0], x[0]);                                            // left edge in bounds
   for (let i = 1; i < n; i++) x[i] = Math.max(x[i], x[i - 1] + gap(i - 1));  // push right to clear
   x[n - 1] = Math.min(x[n - 1], usable - half[n - 1]);                       // right edge in bounds
   for (let i = n - 2; i >= 0; i--) x[i] = Math.min(x[i], x[i + 1] - gap(i)); // pull back toward ideal
+  for (let i = 1; i < n; i++) if (x[i] < x[i - 1]) x[i] = x[i - 1];          // hard monotonic latch: never let the cursor reverse
 
   for (let i = 0; i < n; i++) {
     const tc = ticks[i].getTickContext && ticks[i].getTickContext();
@@ -615,6 +627,12 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(pageWidth, ROW_HEIGHT);
   const ctx = renderer.getContext();
+  // A viewBox (matching the px size, so 1:1 on screen) lets print CSS scale the
+  // row to the paper width via `.row svg { width: 100% }` — the fallback for when
+  // beforeprint can't re-render (iPad Safari). On screen the svg isn't CSS-scaled,
+  // so the cursor's px == user-unit assumption is unaffected.
+  const svgEl = container.querySelector('svg');
+  if (svgEl) svgEl.setAttribute('viewBox', '0 0 ' + pageWidth + ' ' + ROW_HEIGHT);
 
   const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
   const availWidth = (pageWidth - SIDE_MARGIN * 2 - clefWidth) * (fillFrac || 1);
@@ -819,15 +837,16 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   };
 }
 
-function renderScore(score, container) {
+function renderScore(score, container, forceWidth) {
   const measures = score.measures;
   const lyrics = score.lyrics || [];
   ROWS = [];
   container.innerHTML = '';
 
   // Size to the container (the iPad's real width); fall back to PAGE_WIDTH if it
-  // hasn't laid out yet. This is what makes the score fit any screen.
-  const pageWidth = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
+  // hasn't laid out yet. This is what makes the score fit any screen. `forceWidth`
+  // overrides it for print, where we lay rows out to the paper's printable width.
+  const pageWidth = forceWidth || Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
 
   // Build every measure once, then greedily pack measures into rows: at most
   // MAX_BARS_PER_ROW, fewer when the next bar wouldn't fit COMFORTABLY, AND a
@@ -890,6 +909,7 @@ function renderScore(score, container) {
 
 function makeBar() {
   BAR_RECT = document.createElementNS(SVG_NS, 'rect');
+  BAR_RECT.id = 'cursor-bar';   // so print CSS can hide it
   BAR_RECT.setAttribute('fill', BAR_COLOR);
   BAR_RECT.setAttribute('fill-opacity', BAR_OPACITY);
   BAR_RECT.setAttribute('width', BAR_WIDTH);
@@ -1142,12 +1162,60 @@ function buildMeasureTimeline(score) {
 
 let _resizeTimer = null;
 function onResize() {
+  if (_printing) return;   // print re-renders manage their own sizing
   if (!SCORE_REF) return;
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(() => {
     renderScore(SCORE_REF, document.getElementById('score'));
     if (SCHED && ROWS.length) makeBar();   // re-attach the bar to the fresh rows
   }, 200);
+}
+
+// ── Print to Letter ───────────────────────────────────────────────────────────
+// Re-lay the score to the paper's printable width (~7.5in at 96dpi) so the line
+// breaks are right on the page, not the screen. enterPrint/exitPrint are
+// idempotent and reached three ways for cross-browser cover: the Print button,
+// the beforeprint/afterprint events (desktop), and a matchMedia('print') change
+// (iPad Safari, which doesn't reliably fire beforeprint).
+const PRINT_WIDTH = 960;   // ~10in printable on Letter landscape at 96dpi (fits 4 bars/row)
+let _printing = false;
+
+function enterPrint() {
+  if (_printing || !SCORE_REF) return;
+  _printing = true;
+  if (BAR_RECT) BAR_RECT.style.display = 'none';
+  renderScore(SCORE_REF, document.getElementById('score'), PRINT_WIDTH);
+}
+
+function exitPrint() {
+  if (!_printing || !SCORE_REF) return;
+  _printing = false;
+  renderScore(SCORE_REF, document.getElementById('score'));   // back to screen width
+  if (SCHED && ROWS.length) { makeBar(); if (BAR_RECT) BAR_RECT.style.display = ''; }
+}
+
+function setupPrint(score) {
+  const hdr = document.getElementById('print-header');
+  if (hdr) {
+    const bpm = score.tempo_changes[0]?.bpm;
+    const sub = [`${score.measures.length} bars`];
+    if (bpm) sub.push(`${bpm} bpm`);
+    if (score.drummer) sub.push(score.drummer);
+    hdr.innerHTML =
+      `<div class="pt"></div><div class="ps"></div>`;
+    hdr.querySelector('.pt').textContent = `${score.artist} — ${score.title}`;
+    hdr.querySelector('.ps').textContent = sub.join('  ·  ');
+  }
+  const btn = document.getElementById('printbtn');
+  if (btn) btn.addEventListener('click', () => { enterPrint(); setTimeout(() => window.print(), 60); });
+  window.addEventListener('beforeprint', enterPrint);
+  window.addEventListener('afterprint', exitPrint);
+  const mq = window.matchMedia && window.matchMedia('print');
+  if (mq) {
+    const onChange = e => { if (e.matches) enterPrint(); else exitPrint(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);   // older Safari
+  }
 }
 
 function boot() {
@@ -1174,6 +1242,7 @@ function boot() {
   renderScore(score, document.getElementById('score'));
 
   wireControls();
+  setupPrint(score);
   window.addEventListener('resize', onResize);
 
   if (SCHED && ROWS.length && score.youtube_id) {

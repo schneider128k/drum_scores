@@ -101,6 +101,12 @@ const SONGS = [
   { id: '431_5',    slug: 'the-cranberries-zombie',         artist: 'The Cranberries',title: 'Zombie' },
 ];
 
+// Always show the list ordered by artist, then song title (case-insensitive), so
+// the order holds no matter what order songs are added to the array above.
+SONGS.sort((a, b) =>
+  a.artist.localeCompare(b.artist, undefined, { sensitivity: 'base' }) ||
+  a.title.localeCompare(b.title,  undefined, { sensitivity: 'base' }));
+
 const RENDERERS = {
   vexflow: {
     label: 'VexFlow',

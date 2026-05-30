@@ -45,6 +45,10 @@
       border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; cursor: pointer;
     }
     #rate { min-width: 48px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+    #printbtn {
+      min-height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer; flex: 0 0 auto;
+    }
     .meta { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; line-height: 1.25; }
     #heading { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #status { font-size: 12px; color: #777; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -53,10 +57,30 @@
     #hint { font-size: 12px; color: #1f8f43; }
     #hint:empty { display: none; }
     #errlog { color: #c00; background: #ffe; padding: 8px; margin: 8px 3%; border-radius: 4px; white-space: pre-wrap; display: none; }
+
+    /* Print header — only appears in the printout (above the first row). */
+    #print-header { display: none; }
+
+    /* Print to Letter: drop the dock + cursor, lay rows on paper, keep each row
+       whole on a page. The score is re-rendered to the page width on print
+       (renderer.js), and the viewBox lets the SVG scale to fit as a fallback. */
+    @media print {
+      @page { size: letter landscape; margin: 0.5in; }
+      html, body { background: #fff; }
+      #dock, #errlog { display: none !important; }
+      #cursor-bar { display: none !important; }
+      #score { width: 100%; margin: 0; padding: 0; }
+      .row { break-inside: avoid; page-break-inside: avoid; }
+      .row svg { width: 100%; height: auto; }
+      #print-header { display: block; margin: 0 0 12px; }
+      #print-header .pt { font-size: 18px; font-weight: 700; }
+      #print-header .ps { font-size: 12px; color: #555; margin-top: 2px; }
+    }
   </style>
 </head>
 <body>
   <pre id="errlog"></pre>
+  <div id="print-header"></div>
   <div id="score"></div>
 
   <div id="dock">
@@ -72,6 +96,7 @@
         <span id="heading">Loading…</span>
         <span id="status"></span>
       </span>
+      <button id="printbtn">Print</button>
       <a class="back" href="../index.html">‹ All songs</a>
       <div id="yt"></div>
     </div>
