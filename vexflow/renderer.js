@@ -1267,11 +1267,13 @@ function applyLoopFade(t) {
 }
 function restoreVolume() { setLoopVolume(100); }
 
-// Draw (or clear) the blue musical repeat signs at the block's edges. A begin-repeat
-// (thick|thin bar + two dots) sits at the START measure's left barline, an end-repeat
-// (two dots + thin|thick bar) at the END measure's right barline. Drawn as an SVG
-// overlay from MEASURE_BOXES so no re-render is needed when the loop changes.
-const LOOP_BLUE = '#2f6fed';
+// Draw (or clear) the loop markers at the block's edges: a BLACK musical repeat sign
+// (thick|thin bar + two dots) at each edge — begin at the START measure's left barline,
+// end at the END measure's right barline — plus a larger BLUE arrow just below the staff
+// pointing into the loop. Drawn as an SVG overlay from MEASURE_BOXES so no re-render is
+// needed when the loop changes.
+const LOOP_BLUE = '#2f6fed';        // the arrows (app cue)
+const LOOP_SIGN = NOTE_COLOR;       // the repeat sign — black, like the noteheads
 function clearLoopMarkers() {
   for (const g of document.querySelectorAll('.loop-marker')) g.remove();
 }
@@ -1294,21 +1296,22 @@ function repeatSign(box, x, kind) {
   const rect = document.createElementNS(SVG_NS, 'rect');
   rect.setAttribute('x', thickX); rect.setAttribute('y', yT);
   rect.setAttribute('width', thickW); rect.setAttribute('height', h);
-  rect.setAttribute('fill', LOOP_BLUE);
+  rect.setAttribute('fill', LOOP_SIGN);
   g.appendChild(rect);
   const line = document.createElementNS(SVG_NS, 'rect');
   line.setAttribute('x', thinX); line.setAttribute('y', yT);
   line.setAttribute('width', thinW); line.setAttribute('height', h);
-  line.setAttribute('fill', LOOP_BLUE);
+  line.setAttribute('fill', LOOP_SIGN);
   g.appendChild(line);
   for (const dy of [dotY1, dotY2]) {
     const c = document.createElementNS(SVG_NS, 'circle');
     c.setAttribute('cx', dotX + dir * dotR); c.setAttribute('cy', dy);
-    c.setAttribute('r', dotR); c.setAttribute('fill', LOOP_BLUE);
+    c.setAttribute('r', dotR); c.setAttribute('fill', LOOP_SIGN);
     g.appendChild(c);
   }
-  // Inward-pointing flag below the staff at the barline (▶ at the start, ◀ at the end).
-  const fy = yB + 5, fh = 9, fw = 9;
+  // Larger inward-pointing blue arrow below the staff at the barline (▶ at the start,
+  // ◀ at the end) — the prominent at-a-glance loop cue.
+  const fy = yB + 5, fh = 16, fw = 15;
   const tipX = x + dir * fw;
   const tri = document.createElementNS(SVG_NS, 'polygon');
   tri.setAttribute('points', `${x},${fy} ${x},${fy + fh} ${tipX},${fy + fh / 2}`);
