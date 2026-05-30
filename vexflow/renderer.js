@@ -693,7 +693,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // Thin grey staff lines / barlines / clef / measure number.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
-      stave.addClef('percussion').addTimeSignature(m.time_sig.join('/'));
+      stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
     stave.setMeasure(m.index);
     stave.setContext(ctx).draw();
@@ -725,15 +725,15 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       ctx.restore();
     }
 
-    // Meter (time-signature) change marker. We do NOT put the time signature inside the
-    // staff for mid-song changes: an in-staff time sig reserves note-area width, which
-    // would distort the duration-proportional spacing and put a little velocity bump in
-    // the cursor right there. Instead we draw it as a small label above the staff (like
-    // the section labels) — the bar's WIDTH already encodes the meter (a 2/4 bar is half
-    // a 4/4 bar), this just names the change. Shown at every bar whose meter differs from
-    // the previous bar (the very first bar still gets the in-staff signature above).
+    // Time signature — ALWAYS drawn above the staff, never in it (consistent placement,
+    // and an in-staff time sig would reserve note-area width, distorting the duration-
+    // proportional spacing and bumping the cursor). The bar WIDTH already encodes the
+    // meter (a 2/4 bar is half a 4/4 bar); this names it. Drawn on the song's first bar
+    // and again at every meter change, at the section-label height so it clears the notes,
+    // the accent band and the measure number; if the bar also carries a section label we
+    // place it just after that label so the two never overlap.
     const prevM = measureByIndex(m.index - 1);
-    if (prevM && (prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1])) {
+    if (!prevM || prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1]) {
       ctx.save();
       let mx = stave.getNoteStartX();
       const my = stave.getYForLine(0) - SECTION_RISE;
@@ -954,14 +954,13 @@ function renderScore(score, container, opts) {
     rowDiv.className = 'row';
     container.appendChild(rowDiv);
     const rowWeight = rowBuilt.reduce((s, b) => s + weightOf(b.m), 0);
-    // A row with the full count of bars justifies to the FULL width even if it carries
-    // a short bar (e.g. a 2/4 intro bar would otherwise make the whole row ~13% narrower
-    // than the 4/4 rows below it — the Zombie / Square Hammer intro). Bars inside stay
-    // proportional to duration (a 2/4 bar is still half a 4/4 bar, so the cursor keeps a
-    // constant pixel speed within the row). Genuine SHORT rows — a section tail or a
-    // forced break with fewer bars — stay at proportional, left-aligned width.
-    const isFullRow = rowBuilt.length >= barsPerRow;
-    const fillFrac = isFullRow ? 1 : (fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1);
+    // Width is proportional to the row's musical TIME, so the bar widths honestly reflect
+    // the meter: a row that carries a 2/4 bar holds less time than four 4/4 bars and is
+    // drawn proportionally narrower (a 2/4 bar is half a 4/4 bar). The time-signature
+    // label above the staff names the change; the width shows it. One whole-note occupies
+    // the same width in every row, so equal-meter bars line up; short section-tail rows
+    // fill proportionally and sit left-aligned.
+    const fillFrac = fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1;
     try {
       const rec = renderRow(rowBuilt, idx, rowDiv, W, fillFrac, rowHeight, rowTop);
       if (rec) ROWS.push(rec);
