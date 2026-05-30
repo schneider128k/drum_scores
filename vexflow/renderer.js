@@ -725,6 +725,25 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       ctx.restore();
     }
 
+    // Meter (time-signature) change marker. We do NOT put the time signature inside the
+    // staff for mid-song changes: an in-staff time sig reserves note-area width, which
+    // would distort the duration-proportional spacing and put a little velocity bump in
+    // the cursor right there. Instead we draw it as a small label above the staff (like
+    // the section labels) — the bar's WIDTH already encodes the meter (a 2/4 bar is half
+    // a 4/4 bar), this just names the change. Shown at every bar whose meter differs from
+    // the previous bar (the very first bar still gets the in-staff signature above).
+    const prevM = measureByIndex(m.index - 1);
+    if (prevM && (prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1])) {
+      ctx.save();
+      let mx = stave.getNoteStartX();
+      const my = stave.getYForLine(0) - SECTION_RISE;
+      if (m.marker) { ctx.setFont(...SECTION_FONT); mx += ctx.measureText(m.marker).width + 12; }  // sit after the section label if both
+      ctx.setFont('Georgia', 12, 'normal', 'italic');
+      ctx.setFillStyle(SECTION_COLOR);
+      ctx.fillText(m.time_sig.join('/'), mx, my);
+      ctx.restore();
+    }
+
     // Record this measure's box (barline-to-barline x, staff top/bottom) so the
     // loop's blue repeat signs can be overlaid later without a re-render.
     MEASURE_BOXES.push({
