@@ -606,13 +606,18 @@ function applyProportionalSpacing(voice, usable) {
 // Lay out and draw one row of pre-built measures into `container`, sized to
 // `pageWidth`. Bar widths are proportional to musical duration (floored at each
 // bar's min legible width) and notes are placed proportionally to onset time.
-function renderRow(built, rowIdx, container, pageWidth) {
+// `fillFrac` (0..1) is how much of the page this row should occupy: a full
+// MAX_BARS row of the song's typical meter fills the width; a short section row
+// (forced break, or a partial tail) lays out at its natural width, left-aligned,
+// like a paragraph's last line — so a lone bar never smears across the screen and
+// repeated phrases stack in aligned columns.
+function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(pageWidth, ROW_HEIGHT);
   const ctx = renderer.getContext();
 
   const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
-  const availWidth = pageWidth - SIDE_MARGIN * 2 - clefWidth;
+  const availWidth = (pageWidth - SIDE_MARGIN * 2 - clefWidth) * (fillFrac || 1);
   // Bar widths proportional to musical duration (not content density), floored at
   // each bar's min legible width. A 2/4 bar is then half a 4/4 bar, and the whole
   // row is one linear time→x map (constant cursor velocity within a steady bar).
@@ -825,12 +830,17 @@ function renderScore(score, container) {
   const pageWidth = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
 
   // Build every measure once, then greedily pack measures into rows: at most
-  // MAX_BARS_PER_ROW, and fewer when the next bar wouldn't fit COMFORTABLY.
-  // Packing only to each bar's *minimum* legible width (scale ≈ 1) reads as
-  // crowded, so we require every row to stay at ≥ COMFORT × the minimum — dense
-  // or lyric-heavy bars (and narrow screens) then get fewer per row, with air
-  // around every note, like Songsterr. No manual knob; never wider than screen.
+  // MAX_BARS_PER_ROW, fewer when the next bar wouldn't fit COMFORTABLY, AND a
+  // forced break before every section marker so each section (Intro / Verse /
+  // Chorus …) starts flush-left on its own line. That left margin becomes the
+  // spine you read the song's form down, and an 8-bar section lands as two
+  // stacked rows of 4 — repeated phrases line up vertically instead of drifting
+  // mid-row. Packing only to each bar's *minimum* legible width (scale ≈ 1) reads
+  // as crowded, so we require every row to stay at ≥ COMFORT × the minimum —
+  // dense or lyric-heavy bars (and narrow screens) then get fewer per row, with
+  // air around every note, like Songsterr. No manual knob; never wider than screen.
   const COMFORT = 1.6;
+  const weightOf = m => m.duration[0] / m.duration[1];
   const builtAll = measures.map(m => buildMeasure(m, lyrics));
   const usableFirst = (pageWidth - SIDE_MARGIN * 2 - CLEF_W) / COMFORT;
   const usableRest = (pageWidth - SIDE_MARGIN * 2) / COMFORT;
@@ -838,19 +848,32 @@ function renderScore(score, container) {
   let cur = [], curW = 0;
   for (const b of builtAll) {
     const usable = (rows.length === 0) ? usableFirst : usableRest;
-    if (cur.length && (cur.length >= MAX_BARS_PER_ROW || curW + b.minW > usable)) {
+    const newSection = !!b.m.marker;   // every marked measure opens a fresh line
+    if (cur.length && (newSection || cur.length >= MAX_BARS_PER_ROW || curW + b.minW > usable)) {
       rows.push(cur); cur = []; curW = 0;
     }
     cur.push(b); curW += b.minW;
   }
   if (cur.length) rows.push(cur);
 
+  // A "full" row = MAX_BARS_PER_ROW bars of the song's most common meter; that
+  // fills the page. Rows carrying less musical time (a short section, a partial
+  // tail, the 2/4 intro) fill proportionally less and sit left-aligned, so one
+  // whole-note occupies the same width in every row and the columns align.
+  const freq = new Map();
+  for (const m of measures) { const w = weightOf(m); freq.set(w, (freq.get(w) || 0) + 1); }
+  let modalW = 1, best = -1;
+  for (const [w, c] of freq) { if (c > best) { best = c; modalW = w; } }
+  const fullRowWeight = MAX_BARS_PER_ROW * modalW;
+
   rows.forEach((rowBuilt, idx) => {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'row';
     container.appendChild(rowDiv);
+    const rowWeight = rowBuilt.reduce((s, b) => s + weightOf(b.m), 0);
+    const fillFrac = fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1;
     try {
-      const rec = renderRow(rowBuilt, idx, rowDiv, pageWidth);
+      const rec = renderRow(rowBuilt, idx, rowDiv, pageWidth, fillFrac);
       if (rec) ROWS.push(rec);
     } catch (e) {
       rowDiv.textContent = '[row render error: ' + e.message + ']';
@@ -920,14 +943,16 @@ function updateBar(t) {
   BAR_RECT.style.transform = 'translate3d(' + (xAtTime(row, t) - BAR_WIDTH / 2) + 'px,0,0)';
 }
 
-// Teleprompter scroll: keep the active row vertically centred in the space below
-// the sticky header, so the green bar never drops past the middle of the screen.
+// Teleprompter scroll: keep the active row vertically centred in the reading
+// zone — the screen above the sticky bottom dock — so the green bar never drops
+// behind the controls.
 function centerRow(div) {
-  const header = document.getElementById('topbar');
-  const headerH = header ? header.getBoundingClientRect().height : 0;
+  const dock = document.getElementById('dock');
+  const dockH = dock ? dock.getBoundingClientRect().height : 0;
+  const zone = Math.max(120, window.innerHeight - dockH);
   const rect = div.getBoundingClientRect();
   const rowCenterAbs = window.scrollY + rect.top + rect.height / 2;
-  const target = rowCenterAbs - (headerH + (window.innerHeight - headerH) / 2);
+  const target = rowCenterAbs - zone / 2;
   window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
 }
 
@@ -1080,7 +1105,7 @@ function updateStatus(t) {
 function initYt(videoId) {
   window.onYouTubeIframeAPIReady = function () {
     YT_PLAYER = new YT.Player('yt', {
-      videoId: videoId, width: 200, height: 112,
+      videoId: videoId, width: 160, height: 90,
       playerVars: { playsinline: 1 },
       events: {
         onReady: () => { YT_READY = true; refreshTransport(); },
@@ -1135,9 +1160,11 @@ function boot() {
   SCORE_REF = score;
   document.title = `${score.artist} — ${score.title}`;
   const h = document.getElementById('heading');
-  const sh = document.getElementById('subheading');
+  const st = document.getElementById('status');
   if (h) h.textContent = `${score.artist} — ${score.title}`;
-  if (sh) sh.textContent = `${score.measures.length} bars · ${score.tempo_changes[0]?.bpm ?? '?'} bpm`;
+  // Status doubles as the pre-play subheading; updateStatus overwrites it with
+  // the live bar/section readout once the cursor is running.
+  if (st) st.textContent = `${score.measures.length} bars · ${score.tempo_changes[0]?.bpm ?? '?'} bpm`;
 
   // Timing before render — renderRow reads SCHED to lay down the cursor anchors.
   SCHED = buildSecondsAt(score);

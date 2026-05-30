@@ -13,19 +13,24 @@
       color: #1a1a1a;
       overflow-x: hidden;
     }
-    #topbar {
-      position: sticky; top: 0; z-index: 10;
+    /* Score owns the top and the bulk of the screen. Bottom padding lets the
+       last rows scroll up into the centred reading zone, and clears the dock. */
+    #score { width: 94%; margin: 0 auto; padding: 16px 0 calc(60vh + 120px); }
+    .row { display: block; margin: 0; }
+    .row svg { display: block; }
+
+    /* Slim set-and-forget control dock, pinned to the bottom edge (thumb reach on
+       an iPad). One row of controls, with the hint line collapsing above it. */
+    #dock {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+      display: flex; flex-direction: column; gap: 6px;
       background: rgba(250,250,250,0.97);
       backdrop-filter: saturate(1.2) blur(6px);
-      border-bottom: 1px solid #e2e2e2;
+      border-top: 1px solid #e2e2e2;
       padding: 8px 3%;
     }
-    .bar-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .bar-row + .bar-row { margin-top: 8px; }
-    .titles { display: flex; flex-direction: column; line-height: 1.18; min-width: 0; flex: 1 1 auto; }
-    #heading { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
-    #subheading { font-size: 12px; color: #888; }
-    #yt { width: 200px; height: 112px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
+    .dock-row { display: flex; align-items: center; gap: 14px; }
+    #yt { width: 160px; height: 90px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     #yt iframe { border-radius: 6px; }
     #transport {
       min-height: 44px; min-width: 104px; padding: 0 18px;
@@ -40,45 +45,37 @@
       border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; cursor: pointer;
     }
     #rate { min-width: 48px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
-    .speed-label { font-size: 12px; color: #999; }
-    #status { font-size: 12px; color: #777; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .util { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
-    .back { color: #9aa0a6; text-decoration: none; font-size: 13px; white-space: nowrap; }
+    .meta { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; line-height: 1.25; }
+    #heading { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #status { font-size: 12px; color: #777; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .back { color: #9aa0a6; text-decoration: none; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
     .back:hover { color: #0066cc; }
-    #hint { font-size: 12px; color: #1f8f43; flex: 1 1 100%; min-height: 14px; margin-top: 2px; }
-    #score { width: 94%; margin: 0 auto; padding: 10px 0 60vh; }
-    .row { display: block; margin: 0; }
-    .row svg { display: block; }
+    #hint { font-size: 12px; color: #1f8f43; }
+    #hint:empty { display: none; }
     #errlog { color: #c00; background: #ffe; padding: 8px; margin: 8px 3%; border-radius: 4px; white-space: pre-wrap; display: none; }
   </style>
 </head>
 <body>
-  <div id="topbar">
-    <div class="bar-row">
-      <div class="titles">
-        <span id="heading">Loading…</span>
-        <span id="subheading"></span>
-      </div>
-      <div id="yt"></div>
-    </div>
-    <div class="bar-row">
+  <pre id="errlog"></pre>
+  <div id="score"></div>
+
+  <div id="dock">
+    <div id="hint"></div>
+    <div class="dock-row">
       <button id="transport" disabled>▶ Play</button>
-      <span class="speed-label">Speed</span>
       <span class="speed">
         <button id="slower" aria-label="Slower">−</button>
         <span id="rate">100%</span>
         <button id="faster" aria-label="Faster">+</button>
       </span>
-      <span id="status"></span>
-      <span class="util">
-        <a class="back" href="../index.html">‹ All songs</a>
+      <span class="meta">
+        <span id="heading">Loading…</span>
+        <span id="status"></span>
       </span>
-      <span id="hint"></span>
+      <a class="back" href="../index.html">‹ All songs</a>
+      <div id="yt"></div>
     </div>
   </div>
-
-  <pre id="errlog"></pre>
-  <div id="score"></div>
 
   <script>
     window.addEventListener('error', e => {
