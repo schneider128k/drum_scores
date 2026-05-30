@@ -542,34 +542,30 @@ function buildMeasure(m, lyrics) {
   return { m, notes, voice, minW, tuplets };
 }
 
-// Distribute a row's available width across its measures PROPORTIONALLY TO
-// MUSICAL DURATION (a 4/4 bar gets twice a 2/4 bar), subject to a per-measure
-// minimum (its min legible width) so dense bars are never crushed. One-pass
-// water-filling / isotonic projection: repeatedly pin any measure whose
-// proportional share falls below its floor, then split the remaining width among
-// the rest by weight. The row packer keeps Σ floors ≤ total, so slack stays ≥ 0.
-function allocateWidths(weights, floors, total) {
+// Give each measure its width: the LARGER of its musical-duration share of
+// `target` (a 4/4 bar gets twice a 2/4 bar) and its `floor` (min legible width).
+// Crucially this does NOT steal from neighbours — a dense bar that needs more
+// than its share makes the row EXTEND to the right (up to `cap`, the page width)
+// while its equal-duration neighbours keep their fair share. The old water-filling
+// version pinned the dense bar and split the *remainder* among the rest, which
+// starved a sparse bar sitting next to a ghost-heavy 16th run (Come As You Are
+// Refrain: bar 30 collapsed next to bars 29/31). Only if the floors together
+// overflow `cap` do we scale everything down to fit.
+function allocateWidths(weights, floors, target, cap) {
   const n = weights.length;
-  const w = new Array(n).fill(0);
-  const fixed = new Array(n).fill(false);
-  let remaining = total;
-  for (let pass = 0; pass <= n; pass++) {
-    let wsum = 0;
-    for (let i = 0; i < n; i++) if (!fixed[i]) wsum += weights[i];
-    if (wsum <= 0) break;
-    let changed = false;
-    for (let i = 0; i < n; i++) {
-      if (fixed[i]) continue;
-      if (remaining * weights[i] / wsum < floors[i]) {
-        w[i] = floors[i]; fixed[i] = true; remaining -= floors[i]; changed = true;
-      }
-    }
-    if (!changed) {
-      for (let i = 0; i < n; i++) if (!fixed[i]) w[i] = remaining * weights[i] / wsum;
-      break;
-    }
+  let wsum = 0;
+  for (const w of weights) wsum += w;
+  const w = new Array(n);
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    const share = wsum > 0 ? (weights[i] / wsum) * target : target / n;
+    w[i] = Math.max(share, floors[i]);
+    total += w[i];
   }
-  for (let i = 0; i < n; i++) if (!fixed[i] && w[i] === 0) w[i] = floors[i];
+  if (cap && total > cap) {
+    const k = cap / total;
+    for (let i = 0; i < n; i++) w[i] *= k;
+  }
   return w;
 }
 
@@ -646,13 +642,14 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac) {
   if (svgEl) svgEl.setAttribute('viewBox', '0 0 ' + pageWidth + ' ' + ROW_HEIGHT);
 
   const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
-  const availWidth = (pageWidth - SIDE_MARGIN * 2 - clefWidth) * (fillFrac || 1);
+  const fullAvail = pageWidth - SIDE_MARGIN * 2 - clefWidth;   // hard cap: a row never exceeds the page
+  const target = fullAvail * (fillFrac || 1);                 // fillFrac-reduced ideal width
   // Bar widths proportional to musical duration (not content density), floored at
   // each bar's min legible width. A 2/4 bar is then half a 4/4 bar, and the whole
   // row is one linear time→x map (constant cursor velocity within a steady bar).
   const weights = built.map(b => b.m.duration[0] / b.m.duration[1]);
   const floors = built.map(b => b.minW);
-  const widths = allocateWidths(weights, floors, availWidth);
+  const widths = allocateWidths(weights, floors, target, fullAvail);
 
   const rowLyrics = [];   // {x, text, cont} collected across the row, drawn last
   let baselineY = ROW_TOP;
