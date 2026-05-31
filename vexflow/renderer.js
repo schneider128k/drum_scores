@@ -904,50 +904,70 @@ function renderScore(score, container, opts) {
   MEASURE_BOXES = [];
   container.innerHTML = '';
 
-  // Bars per row is FIXED (not derived from fitting widths): 4 on iPad and print,
-  // 2 on a phone-width screen. The container width only decides which of those two
-  // regimes we're in — it never changes the count within a regime.
+  // Row capacity is FIXED as a musical TIME, not a bar count: 16 quarter-note beats
+  // on iPad/print, 8 on a phone. That is four (resp. two) 4/4 bars — the historical
+  // "4 bars per row" — but it now generalises to mixed meters. Three 6/4 bars are 18
+  // beats and CANNOT share a row, so two of them (12 beats) fill a line and the third
+  // wraps; the bar count per row therefore varies with meter while the musical time
+  // per row stays bounded. The container width only selects which regime we're in.
   const cw = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
   const barsPerRow = print ? BARS_PER_ROW : (cw < NARROW_BP ? NARROW_BARS : BARS_PER_ROW);
+  const ROW_BEATS = barsPerRow * 4;   // quarter-note beats per row (16 iPad/print, 8 phone)
   const rowHeight = print ? PRINT_ROW_HEIGHT : ROW_HEIGHT;
   const rowTop = print ? PRINT_ROW_TOP : ROW_TOP;
 
-  // Build every measure once, then pack exactly `barsPerRow` bars per row, with a
-  // forced break before every section marker so each section starts flush-left on
-  // its own line (the spine you read the song's form down; an 8-bar section lands
-  // as two stacked rows of 4 so repeated phrases line up vertically). No comfort
-  // gate — crowding is handled by the uniform scale below, not by taking fewer bars.
-  const weightOf = m => m.duration[0] / m.duration[1];
+  // Build every measure once, then greedily pack bars into a row until the next bar
+  // would push the row past ROW_BEATS quarter-note beats, with a forced break before
+  // every section marker so each section starts flush-left on its own line (the spine
+  // you read the song's form down; an 8-bar 4/4 section still lands as two stacked
+  // rows of 4 so repeated phrases line up vertically). The beat budget resets on every
+  // break. A single bar longer than the budget (>16 beats) still goes on its own row —
+  // a bar is never split. No comfort gate: crowding is handled by the uniform scale
+  // below, never by taking fewer bars than the budget allows.
+  const weightOf = m => m.duration[0] / m.duration[1];     // measure length in whole-notes
+  const beatsOf  = m => weightOf(m) * 4;                    // …in quarter-note beats
+  const BEAT_EPS = 1e-6;                                    // exact for 4/4, 6/4, 2/4; guards float dust
+  // NOTE on COMPOUND meters (6/8, 9/8, 12/8 — none in the corpus yet, but coming):
+  // beatsOf counts QUARTER-note beats, so a 6/8 bar scores 3, not the 2 dotted-quarter
+  // beats a musician feels. Width stays correct either way (it's proportional to musical
+  // length, i.e. whole-notes — that part is meter-agnostic). What shifts is only the
+  // ROW BUDGET semantics: a 16-quarter-beat row fits ~5⅓ bars of 6/8. If that ever reads
+  // as too many compound bars per line, switch the budget to "felt beats" — for n/8
+  // compound meters that's numerator/3 dotted-quarters — rather than retuning ROW_BEATS.
   const builtAll = measures.map(m => buildMeasure(m, lyrics));
   const rows = [];
   let cur = [];
+  let curBeats = 0;
   for (const b of builtAll) {
     const newSection = !!b.m.marker;   // every marked measure opens a fresh line
-    if (cur.length && (newSection || cur.length >= barsPerRow)) {
-      rows.push(cur); cur = [];
+    if (cur.length && (newSection || curBeats + beatsOf(b.m) > ROW_BEATS + BEAT_EPS)) {
+      rows.push(cur); cur = []; curBeats = 0;
     }
     cur.push(b);
+    curBeats += beatsOf(b.m);
   }
   if (cur.length) rows.push(cur);
 
-  // One uniform internal width W for EVERY row: barsPerRow of the single densest
-  // bar (its min legible width) plus margins and the first-row clef. Rendering all
-  // rows at W and letting `.row svg { width:100% }` scale them to the container/page
-  // means the whole score shares one staff size, sized so even a full row of the
-  // densest bar is uncrowded. Denser songs simply scale smaller (= the requested
-  // "scale everything down so nothing crowds"); sparse songs barely shrink.
-  let maxBarFloor = 1;
-  for (const b of builtAll) if (b.minW > maxBarFloor) maxBarFloor = b.minW;
-  const W = Math.round(barsPerRow * maxBarFloor + SIDE_MARGIN * 2 + CLEF_W);
+  // One uniform internal scale for the WHOLE score: P = internal px per whole-note,
+  // chosen as the densest bar's required pixels-per-whole-note (its min legible width
+  // divided by its musical length). At this scale every bar clears its floor AND every
+  // whole-note of music occupies exactly P px in every row — so bar width is strictly
+  // proportional to duration (a 2/4 bar is half a 4/4 bar, a 6/4 bar is one-and-a-half)
+  // and equal-meter bars line up across rows. W holds a full budget of music
+  // (barsPerRow whole-notes = ROW_BEATS beats) at that scale, plus margins and the
+  // first-row clef. Rendering every row at W and letting `.row svg { width:100% }`
+  // scale it to the container/page gives the whole score one staff size, sized so a
+  // full row never crowds; denser songs simply scale smaller. (For a pure-4/4 song
+  // weight==1 everywhere, so P is just the densest bar floor and W matches the old
+  // barsPerRow*maxBarFloor — this is a strict generalisation, not a change for them.)
+  let P = 1;
+  for (const b of builtAll) { const wt = weightOf(b.m); if (wt > 0) P = Math.max(P, b.minW / wt); }
+  const W = Math.round(barsPerRow * P + SIDE_MARGIN * 2 + CLEF_W);
 
-  // A "full" row = barsPerRow bars of the song's most common meter; that fills W.
-  // Rows carrying less musical time (a short section, a partial tail, the 2/4 intro)
-  // fill proportionally less and sit left-aligned, so columns align across rows.
-  const freq = new Map();
-  for (const m of measures) { const w = weightOf(m); freq.set(w, (freq.get(w) || 0) + 1); }
-  let modalW = 1, best = -1;
-  for (const [w, c] of freq) { if (c > best) { best = c; modalW = w; } }
-  const fullRowWeight = barsPerRow * modalW;
+  // A "full" row carries barsPerRow whole-notes of music (= ROW_BEATS beats); that fills W.
+  // Rows carrying less musical time (a short section, a partial tail, the 2/4 outro of a
+  // 6/4 run) fill proportionally less and sit left-aligned, so columns align across rows.
+  const fullRowWeight = barsPerRow;
 
   rows.forEach((rowBuilt, idx) => {
     const rowDiv = document.createElement('div');
