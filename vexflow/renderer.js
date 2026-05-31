@@ -424,6 +424,15 @@ const SECTION_FONT = ['Georgia', 13, 'normal', 'italic'];
 function isFirstRow(rowIdx) { return rowIdx === 0; }
 function frac(f) { return f[0] / f[1]; }
 
+// Minimum centre-to-centre breathing room between adjacent noteheads, on top of
+// their two half-widths — the smallest legible gap. Used by applyProportionalSpacing
+// for both the feasibility test and the spacing projection.
+const SPACING_PAD = 4;
+// A drawn notehead's right edge runs a few px past the tickable's getWidth() (glyph
+// overhang beyond the measured box). Added to the right-boundary reservation so a
+// note set flush to the bar's right edge still doesn't poke over the barline.
+const HEAD_OVERHANG = 6;
+
 // Draw accents as one uniform band above the staff (Songsterr style), instead
 // of per-note articulations that bob up and down with the chord height.
 function drawAccentBand(ctx, stave, notes) {
@@ -596,16 +605,23 @@ function applyProportionalSpacing(voice, usable) {
   try { total = voice.getTicksUsed().value(); } catch (_) {}
   if (!total) return;
 
-  const ideal = new Array(n), half = new Array(n);
+  // half[i] = half the tickable's FULL formatted width (notehead + dots + the lyric/
+  // accidental space it reserved) — drives the inter-note min gap, so dense syllables
+  // still push heads apart. rightExt[i] = how far the drawn notehead's right edge sits
+  // past the tick-context x: a stem-down drum head sits to the RIGHT of the context, so
+  // its edge is ~the full width plus a few px of glyph overhang past getWidth(). We
+  // reserve that on the boundary caps so no head crosses the barline.
+  const ideal = new Array(n), half = new Array(n), rightExt = new Array(n);
   let acc = 0;
   for (let i = 0; i < n; i++) {
     ideal[i] = (acc / total) * usable;
     let wd = 12; try { wd = ticks[i].getWidth() || wd; } catch (_) {}
     half[i] = wd / 2;
+    rightExt[i] = wd + HEAD_OVERHANG;
     let tk = 0; try { tk = ticks[i].getTicks().value(); } catch (_) {}
     acc += tk;
   }
-  const PAD = 4;
+  const PAD = SPACING_PAD;
   const gap = i => half[i] + half[i + 1] + PAD;   // min centre-to-centre
 
   // Feasibility: can the bar hold every note at its minimum centre-to-centre
@@ -619,12 +635,32 @@ function applyProportionalSpacing(voice, usable) {
   for (let i = 0; i < n - 1; i++) need += gap(i);
   if (need > usable) return;
 
-  const x = ideal.slice();
-  x[0] = Math.max(half[0], x[0]);                                            // left edge in bounds
-  for (let i = 1; i < n; i++) x[i] = Math.max(x[i], x[i - 1] + gap(i - 1));  // push right to clear
-  x[n - 1] = Math.min(x[n - 1], usable - half[n - 1]);                       // right edge in bounds
-  for (let i = n - 2; i >= 0; i--) x[i] = Math.min(x[i], x[i + 1] - gap(i)); // pull back toward ideal
-  for (let i = 1; i < n; i++) if (x[i] < x[i - 1]) x[i] = x[i - 1];          // hard monotonic latch: never let the cursor reverse
+  // Project the ideal onset positions onto "monotone, ≥ min-gap apart, inside
+  // [half[0], usable-half[n-1]]" in ONE forward sweep with a precomputed right cap.
+  // M[i] = the latest x[i] may sit while still leaving room for every LATER note at
+  // min gap plus the right edge; it steps left by one gap each note. Because the bar
+  // passed the feasibility test (need ≤ usable), M[i] is always ≥ the running left
+  // bound, so the clamp can't invert. Each x[i] is max(left-bound, ideal) capped at
+  // M[i] — so it honours the proportional onset where there's room and compresses to
+  // min spacing only inside a dense cluster, and the LAST note's right edge is
+  // provably ≤ usable. (The old forward/clamp/back/latch sequence ran the latch AFTER
+  // the right clamp, which could shove the tail back across the barline — the 32nd-run
+  // overflow in The Man Who Sold The World m2/m3. This construction can't.)
+  // Right cap per note: its context may sit at most usable - rightExt[i] so the drawn
+  // notehead's right edge lands exactly on (never past) the note-area edge. M steps left
+  // by one full gap per note AND is independently capped by each note's own head edge —
+  // so no note's head crosses the barline, not just the last. (The 6-11px spill in The
+  // Man Who Sold The World m2/m3 was this head-vs-context offset; the spacer ran fine,
+  // nothing bailed — capping centres by half left a notehead-half hanging over.)
+  const M = new Array(n);
+  M[n - 1] = usable - rightExt[n - 1];
+  for (let i = n - 2; i >= 0; i--) M[i] = Math.min(M[i + 1] - gap(i), usable - rightExt[i]);
+  const x = new Array(n);
+  let lo = half[0];                                  // left edge / running min from prior note
+  for (let i = 0; i < n; i++) {
+    x[i] = Math.min(M[i], Math.max(lo, ideal[i]));   // honour onset where it fits; never past the cap
+    lo = x[i] + (i + 1 < n ? gap(i) : 0);            // next note must clear this one by ≥ min gap
+  }
 
   for (let i = 0; i < n; i++) {
     const tc = ticks[i].getTickContext && ticks[i].getTickContext();
