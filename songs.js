@@ -29,6 +29,24 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "258_10",
+    "song_id": 258,
+    "part_id": 10,
+    "instrument": "drums",
+    "artist": "blink-182",
+    "title": "All The Small Things",
+    "lyrics": true
+  },
+  {
+    "id": "741_7",
+    "song_id": 741,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "blink-182",
+    "title": "What's My Age Again?",
+    "lyrics": true
+  },
+  {
     "id": "3131_7",
     "song_id": 3131,
     "part_id": 7,
@@ -44,6 +62,15 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Deep Purple",
     "title": "Smoke On The Water",
+    "lyrics": true
+  },
+  {
+    "id": "334_13",
+    "song_id": 334,
+    "part_id": 13,
+    "instrument": "drums",
+    "artist": "Dragonforce",
+    "title": "Through The Fire And Flames",
     "lyrics": true
   },
   {
@@ -98,6 +125,15 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Guns N' Roses",
     "title": "Sweet Child O' Mine",
+    "lyrics": true
+  },
+  {
+    "id": "11053_9",
+    "song_id": 11053,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Kansas",
+    "title": "Carry On Wayward Son",
     "lyrics": true
   },
   {
