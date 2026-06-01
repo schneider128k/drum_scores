@@ -29,9 +29,9 @@ window.SONGS = [
     "lyrics": true
   },
   {
-    "id": "258_10",
+    "id": "258_11",
     "song_id": 258,
-    "part_id": 10,
+    "part_id": 11,
     "instrument": "drums",
     "artist": "blink-182",
     "title": "All The Small Things",

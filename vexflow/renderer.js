@@ -91,29 +91,42 @@ function buildSecondsAt(score) {
     .find(c => c.video_id === score.youtube_id);
   const points = chosen && chosen.points;
   if (!points || points.length < 2) return null;
-  if (points.length > measures.length) return null;
 
   const n = measures.length;
-  const nPts = points.length;
   const offset = Number(score.youtube_offset) || 0;
   const mPos = measures.map(m => m.position[0] / m.position[1]);
   const mDur = measures.map(m => m.duration[0] / m.duration[1]);
 
+  // points[i] is the recording-time of measure i's downbeat. Songsterr often
+  // supplies one extra trailing anchor — the downbeat *after* the final
+  // measure (points.length === n + 1) — which is a useful end-anchor, not an
+  // error. (It used to make us bail out entirely, leaving the song with no
+  // cursor, no video and a disabled Play button.) Clamp to the measures we
+  // have, give every anchored measure a real next-anchor end when one exists,
+  // and extrapolate only the tail measures that fall past the last anchor.
+  const anchored = Math.min(points.length, n);
   const starts = new Array(n);
   const ends = new Array(n);
-  for (let i = 0; i < nPts; i++) starts[i] = points[i] - offset;
-  for (let i = 0; i < nPts - 1; i++) ends[i] = points[i + 1] - offset;
+  for (let i = 0; i < anchored; i++) starts[i] = points[i] - offset;
+  for (let i = 0; i < anchored; i++) {
+    if (i + 1 < points.length) ends[i] = points[i + 1] - offset;
+  }
 
-  const lastSpw = mDur[nPts - 2] > 0
-    ? (starts[nPts - 1] - starts[nPts - 2]) / mDur[nPts - 2]
+  // Close the last anchored measure (if it has no next-anchor) using the local
+  // seconds-per-whole-note from the preceding anchored pair, then extrapolate
+  // any remaining tail measures at that same rate.
+  const last = anchored - 1;
+  const spw = (last >= 1 && mDur[last - 1] > 0)
+    ? (starts[last] - starts[last - 1]) / mDur[last - 1]
     : 1.0;
-  ends[nPts - 1] = starts[nPts - 1] + lastSpw * mDur[nPts - 1];
-  let cursor = ends[nPts - 1];
-  for (let i = nPts; i < n; i++) {
+  if (ends[last] === undefined) ends[last] = starts[last] + spw * mDur[last];
+  let cursor = ends[last];
+  for (let i = last + 1; i < n; i++) {
     starts[i] = cursor;
-    cursor += lastSpw * mDur[i];
+    cursor += spw * mDur[i];
     ends[i] = cursor;
   }
+  if (!isFinite(ends[n - 1])) return null;
 
   function at(absPos) {
     let i = 0;
