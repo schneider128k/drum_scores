@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Songsterr — drum scores</title>
+  <title>Drum scores</title>
   <style>
     :root {
       --bg: #0f1115;
@@ -12,6 +12,7 @@
       --fg: #e6e6e6;
       --muted: #9aa0a6;
       --accent: #ffb454;
+      --accent-ink: #1a1205;
       --hair: #2a2e37;
     }
     * { box-sizing: border-box; }
@@ -22,135 +23,248 @@
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      padding: 32px 16px;
+      padding: 32px 16px 64px;
     }
     .layout { max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px 0; letter-spacing: -0.01em; }
-    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    h1 { font-size: 26px; font-weight: 600; margin: 0 0 4px 0; letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
 
-    /* ── Renderer chooser ─────────────────────────────────────── */
-    .chooser {
-      display: flex; gap: 6px; padding: 5px;
+    /* ── Search box ───────────────────────────────────────────── */
+    .search {
+      position: relative; margin-bottom: 14px;
+    }
+    .search svg {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      width: 18px; height: 18px; color: var(--muted); pointer-events: none;
+    }
+    .search input {
+      width: 100%; font: inherit; font-size: 16px;
+      color: var(--fg); background: var(--panel);
+      border: 1px solid var(--hair); border-radius: 12px;
+      padding: 14px 44px 14px 42px;
+      transition: border-color .12s, box-shadow .12s;
+    }
+    .search input::placeholder { color: var(--muted); }
+    .search input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255, 180, 84, .15);
+    }
+    .search .clear {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      appearance: none; border: 0; background: transparent; cursor: pointer;
+      color: var(--muted); font-size: 20px; line-height: 1; padding: 6px 10px;
+      border-radius: 8px; display: none;
+    }
+    .search .clear:hover { color: var(--fg); background: var(--panel-hi); }
+    .search.has-text .clear { display: block; }
+
+    /* ── Instrument chips ─────────────────────────────────────── */
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 24px; }
+    .chip {
+      appearance: none; cursor: pointer; font: inherit;
+      font-size: 13px; font-weight: 600; color: var(--muted);
       background: var(--panel); border: 1px solid var(--hair);
-      border-radius: 12px;
+      border-radius: 999px; padding: 8px 14px;
+      display: inline-flex; align-items: center; gap: 7px;
+      transition: background .12s, color .12s, border-color .12s, opacity .12s;
     }
-    .chooser button {
-      flex: 1; appearance: none; cursor: pointer;
-      font: inherit; font-size: 13px; font-weight: 600;
-      color: var(--muted); background: transparent;
-      border: 0; border-radius: 8px; padding: 10px 8px;
-      transition: background .12s, color .12s;
+    .chip:hover:not(.on) { color: var(--fg); border-color: var(--muted); }
+    .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .chip .count {
+      font-size: 11px; font-weight: 700; border-radius: 999px;
+      padding: 1px 7px; background: rgba(255,255,255,.07); color: inherit;
     }
-    .chooser button:hover { color: var(--fg); }
-    .chooser button.on { background: var(--accent); color: #1a1205; }
-    .desc {
-      color: var(--muted); font-size: 13px; line-height: 1.45;
-      margin: 12px 2px 22px 2px; min-height: 19px;
-    }
+    .chip.on .count { background: rgba(0,0,0,.16); }
+    .chip.empty { opacity: .5; }
 
-    /* ── Song list (rendered once; links retarget on choice) ──── */
+    /* ── Song list ────────────────────────────────────────────── */
+    .group-head {
+      display: flex; align-items: center; gap: 12px;
+      color: var(--accent); font-size: 12px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      margin: 22px 2px 8px;
+    }
+    .group-head::after {
+      content: ""; flex: 1; height: 1px; background: var(--hair);
+    }
     ul.songs { list-style: none; margin: 0; padding: 0; }
     ul.songs a {
-      display: flex; align-items: baseline; gap: 0;
+      display: flex; align-items: center; gap: 0;
       padding: 13px 16px; background: var(--panel); color: var(--fg);
       text-decoration: none; border-radius: 8px; margin-bottom: 5px;
       transition: background .1s, transform .05s;
     }
     ul.songs a:hover { background: var(--panel-hi); }
     ul.songs a:active { transform: scale(.997); }
-    ul.songs .artist { color: var(--accent); font-weight: 600; }
-    ul.songs .dash { color: var(--muted); padding: 0 6px; }
     ul.songs .title { color: var(--fg); }
+    ul.songs .title mark { background: rgba(255,180,84,.25); color: var(--fg); border-radius: 3px; padding: 0 1px; }
+    ul.songs .tag {
+      margin-left: 10px; font-size: 11px; font-weight: 600; color: var(--muted);
+      border: 1px solid var(--hair); border-radius: 999px; padding: 1px 8px;
+    }
     ul.songs .go { margin-left: auto; color: var(--muted); font-size: 13px; opacity: .7; }
 
-    .footer { margin-top: 36px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
+    .empty-state {
+      text-align: center; color: var(--muted); font-size: 14px;
+      padding: 40px 16px; line-height: 1.6;
+    }
+
+    .footer { margin-top: 40px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.7; }
     .footer a { color: var(--muted); }
   </style>
 </head>
 <body>
   <div class="layout">
     <h1>Drum scores</h1>
-    <div class="subtitle">Songs synced to YouTube with real drum samples. Pick how you'd like to read them, then choose a song.</div>
+    <div class="subtitle" id="subtitle">Engraved notation synced to YouTube, with a live cursor.</div>
 
-    <div class="chooser" id="chooser" role="tablist" aria-label="Rendering method">
-      <button data-r="vexflow"    role="tab">VexFlow</button>
-      <button data-r="garageband" role="tab">GarageBand</button>
-      <button data-r="lilypond"   role="tab">LilyPond</button>
+    <div class="search" id="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="q" type="search" inputmode="search" autocomplete="off" spellcheck="false"
+             placeholder="Search artist or title…" aria-label="Search artist or title">
+      <button class="clear" id="clear" type="button" aria-label="Clear search">×</button>
     </div>
-    <div class="desc" id="desc"></div>
 
-    <ul class="songs" id="songs"></ul>
+    <div class="chips" id="chips" role="tablist" aria-label="Instrument"></div>
+
+    <div id="list"></div>
 
     <div class="footer">
-      Engraving: VexFlow &amp; LilyPond · Beat grid inspired by GarageBand · Audio: CC0 drum samples (Virtuosity Drums) via Tone.js.
+      Engraving: VexFlow · Audio: the song's official YouTube, beat-synced.<br>
+      Looking for the old grid &amp; sheet-music views? They live in the <a href="archive/index.html">archive</a>.
     </div>
   </div>
 
+<script src="songs.js"></script>
 <script>
-// Each song once. id → VexFlow/GarageBand (?song=id); slug → LilyPond page.
-const SONGS = [
-  { id: '442661_8', slug: 'ghost-dance-macabre',            artist: 'Ghost',          title: 'Dance Macabre' },
-  { id: '441770_9', slug: 'ghost-rats',                     artist: 'Ghost',          title: 'Rats' },
-  { id: '412647_8', slug: 'ghost-square-hammer',            artist: 'Ghost',          title: 'Square Hammer' },
-  { id: '19_8',     slug: 'metallica-enter-sandman',        artist: 'Metallica',      title: 'Enter Sandman' },
-  { id: '14_6',     slug: 'nirvana-come-as-you-are',        artist: 'Nirvana',        title: 'Come As You Are' },
-  { id: '31_6',     slug: 'nirvana-heart-shaped-box',       artist: 'Nirvana',        title: 'Heart-Shaped Box' },
-  { id: '295_5',    slug: 'nirvana-in-bloom',               artist: 'Nirvana',        title: 'In Bloom' },
-  { id: '269_5',    slug: 'nirvana-smells-like-teen-spirit',artist: 'Nirvana',        title: 'Smells Like Teen Spirit' },
-  { id: '7346_5',   slug: 'nirvana-the-man-who-sold-the-world',artist: 'Nirvana',     title: 'The Man Who Sold The World' },
-  { id: '16093_3',  slug: 'pixies-wave-of-mutilation',      artist: 'Pixies',         title: 'Wave Of Mutilation' },
-  { id: '97_6',     slug: 'radiohead-creep',                artist: 'Radiohead',      title: 'Creep' },
-  { id: '89089_8',  slug: 'survivor-eye-of-the-tiger',      artist: 'Survivor',       title: 'Eye Of The Tiger' },
-  { id: '431_5',    slug: 'the-cranberries-zombie',         artist: 'The Cranberries',title: 'Zombie' },
+// window.SONGS is generated by pipeline/export_vexflow.py (see songs.js).
+const SONGS = (window.SONGS || []).slice();
+
+// Canonical instrument order for the filter row. Drums is all we have today;
+// guitar/bass appear automatically once scores with those labels are exported.
+const INSTRUMENTS = [
+  { key: 'drums',  label: 'Drums'  },
+  { key: 'guitar', label: 'Guitar' },
+  { key: 'bass',   label: 'Bass'   },
 ];
 
-// Always show the list ordered by artist, then song title (case-insensitive), so
-// the order holds no matter what order songs are added to the array above.
-SONGS.sort((a, b) =>
-  a.artist.localeCompare(b.artist, undefined, { sensitivity: 'base' }) ||
-  a.title.localeCompare(b.title,  undefined, { sensitivity: 'base' }));
+const listEl = document.getElementById('list');
+const chipsEl = document.getElementById('chips');
+const qEl = document.getElementById('q');
+const searchEl = document.getElementById('search');
+const clearEl = document.getElementById('clear');
 
-const RENDERERS = {
-  vexflow: {
-    label: 'VexFlow',
-    desc: 'Engraved staff notation with a live green cursor that follows the YouTube audio.',
-    href: s => `vexflow/player.html?song=${s.id}`,
-  },
-  garageband: {
-    label: 'GarageBand',
-    desc: 'A colorful step grid — one row per kit piece — that lights up in time with the music.',
-    href: s => `garageband/index.html?song=${s.id}`,
-  },
-  lilypond: {
-    label: 'LilyPond',
-    desc: 'Publication-quality engraved sheet music with lyrics (static pages).',
-    href: s => `songs/${s.slug}.html`,
-  },
-};
+const counts = {};
+SONGS.forEach(s => { counts[s.instrument] = (counts[s.instrument] || 0) + 1; });
 
-const KEY = 'drumScores.renderer';
-let current = localStorage.getItem(KEY);
-if (!RENDERERS[current]) current = 'vexflow';
+const KEY = 'drumScores.instrument';
+let instrument = localStorage.getItem(KEY);
+if (!INSTRUMENTS.some(i => i.key === instrument)) {
+  // Default to the first instrument that actually has songs (drums today).
+  instrument = (INSTRUMENTS.find(i => counts[i.key]) || INSTRUMENTS[0]).key;
+}
+let query = '';
 
-const songsEl = document.getElementById('songs');
-songsEl.innerHTML = SONGS.map(s =>
-  `<li><a data-song><span class="artist">${s.artist}</span><span class="dash">—</span><span class="title">${s.title}</span><span class="go">›</span></a></li>`
-).join('');
-const anchors = [...songsEl.querySelectorAll('a[data-song]')];
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+}
+function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function apply(r) {
-  current = r;
-  localStorage.setItem(KEY, r);
-  document.querySelectorAll('#chooser button').forEach(b => b.classList.toggle('on', b.dataset.r === r));
-  document.getElementById('desc').textContent = RENDERERS[r].desc;
-  anchors.forEach((a, i) => { a.href = RENDERERS[r].href(SONGS[i]); });
+// Wrap query matches in <mark>; input is escaped first so this is safe.
+function highlight(text) {
+  const safe = escapeHtml(text);
+  if (!query) return safe;
+  const re = new RegExp('(' + escapeReg(escapeHtml(query)) + ')', 'ig');
+  return safe.replace(re, '<mark>$1</mark>');
 }
 
-document.getElementById('chooser').addEventListener('click', e => {
-  const btn = e.target.closest('button'); if (btn) apply(btn.dataset.r);
+function renderChips() {
+  chipsEl.innerHTML = INSTRUMENTS.map(i => {
+    const n = counts[i.key] || 0;
+    const cls = `chip${i.key === instrument ? ' on' : ''}${n ? '' : ' empty'}`;
+    return `<button class="${cls}" role="tab" data-i="${i.key}" aria-selected="${i.key === instrument}"><span>${i.label}</span><span class="count">${n}</span></button>`;
+  }).join('');
+}
+
+function renderList() {
+  const q = query.trim().toLowerCase();
+  const rows = SONGS.filter(s =>
+    s.instrument === instrument &&
+    (!q || s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)));
+
+  if (!rows.length) {
+    const label = (INSTRUMENTS.find(i => i.key === instrument) || {}).label || instrument;
+    listEl.innerHTML = `<div class="empty-state">${
+      counts[instrument]
+        ? `No ${escapeHtml(label.toLowerCase())} scores match “${escapeHtml(query.trim())}”.`
+        : `No ${escapeHtml(label.toLowerCase())} scores yet — coming soon.`
+    }</div>`;
+    return;
+  }
+
+  // Group by artist, preserving the artist→title sort the manifest already has.
+  const byArtist = [];
+  let cur = null;
+  for (const s of rows) {
+    if (!cur || cur.artist !== s.artist) { cur = { artist: s.artist, items: [] }; byArtist.push(cur); }
+    cur.items.push(s);
+  }
+  let html = '';
+  for (const g of byArtist) {
+    html += `<div class="group-head">${highlight(g.artist)}</div><ul class="songs">`;
+    for (const s of g.items) {
+      html += `<li><a href="vexflow/player.html?song=${encodeURIComponent(s.id)}">`
+           +  `<span class="title">${highlight(s.title)}</span>`
+           +  (s.lyrics ? `<span class="tag">lyrics</span>` : ``)
+           +  `<span class="go">›</span></a></li>`;
+    }
+    html += `</ul>`;
+  }
+  listEl.innerHTML = html;
+}
+
+function setInstrument(key) {
+  instrument = key;
+  localStorage.setItem(KEY, key);
+  renderChips();
+  renderList();
+}
+
+function render() { renderChips(); renderList(); }
+
+chipsEl.addEventListener('click', e => {
+  const btn = e.target.closest('.chip'); if (btn) setInstrument(btn.dataset.i);
 });
 
-apply(current);
+qEl.addEventListener('input', () => {
+  query = qEl.value;
+  searchEl.classList.toggle('has-text', query.length > 0);
+  renderList();
+});
+qEl.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && query) { e.preventDefault(); clearSearch(); }
+  if (e.key === 'Enter') {
+    const first = listEl.querySelector('ul.songs a');
+    if (first) window.location.href = first.getAttribute('href');
+  }
+});
+function clearSearch() {
+  query = ''; qEl.value = ''; searchEl.classList.remove('has-text');
+  renderList(); qEl.focus();
+}
+clearEl.addEventListener('click', clearSearch);
+
+// "/" focuses the search box from anywhere (ignored while typing in a field).
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== qEl) { e.preventDefault(); qEl.focus(); }
+});
+
+document.getElementById('subtitle').textContent =
+  `${SONGS.length} ${SONGS.length === 1 ? 'song' : 'songs'} · synced to YouTube, with a live cursor.`;
+
+render();
 </script>
 </body>
 </html>
