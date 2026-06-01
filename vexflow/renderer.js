@@ -146,9 +146,23 @@ const DRUM_MAP = {
   crashcymbalb:   { key: 'a/5/x2', voice: 1 },
   splashcymbal:   { key: 'a/5/x2', voice: 1 },
   chinesecymbal:  { key: 'a/5/x2', voice: 1 },
-  cowbell:        { key: 'd/5/x3', voice: 1 },
+  cowbell:        { key: 'd/5/t2', voice: 1 },
   tambourine:     { key: 'b/5/x3', voice: 1 },
   vibraslap:      { key: 'b/5/x3', voice: 1 },
+};
+
+// Plain-language names for the drum key shown at the bottom of each score.
+// Pieces that share the same notehead+position are grouped into one entry.
+const PIECE_LABEL = {
+  closedhihat:  'Hi-hat (closed)', openhihat: 'Hi-hat (open)',
+  halfopenhihat:'Hi-hat (half-open)', pedalhihat: 'Hi-hat (foot)',
+  ridecymbal:   'Ride', ridebell: 'Ride bell',
+  crashcymbal:  'Crash', crashcymbalb: 'Crash',
+  splashcymbal: 'Splash', chinesecymbal: 'China',
+  cowbell:      'Cowbell', tambourine: 'Tambourine', vibraslap: 'Vibraslap',
+  hightom:      'High tom', lowtom: 'Mid tom', tommh: 'Mid tom',
+  highfloortom: 'Floor tom (high)', lowfloortom: 'Floor tom (low)',
+  acousticsnare:'Snare', sidestick: 'Cross-stick', bassdrum: 'Bass drum (kick)',
 };
 
 // Fraction (of whole-note) → [vexflow duration string, dot count].
@@ -1025,6 +1039,70 @@ function renderScore(score, container, opts) {
       console.error('row', idx, e);
     }
   });
+
+  renderDrumKey(score, container);
+}
+
+// A drum key at the bottom of the score: one mini percussion staff per piece
+// the song actually uses, drawn from DRUM_MAP so the glyph AND staff position
+// match the score exactly (position is what tells kick/snare/toms apart — they
+// share the same oval head). Pieces with an identical notehead+position are
+// merged into one labelled entry. Rebuilt with the score on each (re)render.
+function renderDrumKey(score, container) {
+  const used = new Set();
+  for (const m of (score.measures || []))
+    for (const e of (m.events || []))
+      for (const n of (e.notes || []))
+        if (n.lily && DRUM_MAP[n.lily]) used.add(n.lily);
+  if (!used.size) return;
+
+  const byKey = new Map();   // mapKey → set of friendly labels
+  for (const lily of used) {
+    const k = DRUM_MAP[lily].key;
+    if (!byKey.has(k)) byKey.set(k, new Set());
+    byKey.get(k).add(PIECE_LABEL[lily] || lily);
+  }
+  const entries = [...byKey.entries()]
+    .map(([k, labels]) => ({ key: k, label: [...labels].join(' / ') }))
+    .sort((a, b) => keyVal(b.key) - keyVal(a.key));   // high on the staff first
+
+  const wrap = document.createElement('div');
+  wrap.className = 'drumkey';
+  const title = document.createElement('div');
+  title.className = 'drumkey-title';
+  title.textContent = 'Drum key — what the symbols mean';
+  wrap.appendChild(title);
+  const grid = document.createElement('div');
+  grid.className = 'drumkey-grid';
+  wrap.appendChild(grid);
+
+  const CW = 58, CH = 84;
+  for (const ent of entries) {
+    const cell = document.createElement('div');
+    cell.className = 'dk-cell';
+    const art = document.createElement('div');
+    art.className = 'dk-art';
+    cell.appendChild(art);
+    const lab = document.createElement('div');
+    lab.className = 'dk-label';
+    lab.textContent = ent.label;
+    cell.appendChild(lab);
+    grid.appendChild(cell);
+    try {
+      const r = new VF.Renderer(art, VF.Renderer.Backends.SVG);
+      r.resize(CW, CH);
+      const ctx = r.getContext();
+      const stave = new VF.Stave(2, 22, CW - 6);
+      stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
+      stave.setContext(ctx).draw();
+      const note = new VF.StaveNote({ keys: [ent.key], duration: 'q', stem_direction: -1 });
+      VF.Formatter.FormatAndDraw(ctx, stave, [note]);
+    } catch (e) {
+      art.textContent = '?';
+      console.error('drumkey', ent, e);
+    }
+  }
+  container.appendChild(wrap);
 }
 
 // ── Travelling-bar playback (Phase 1) ─────────────────────────────────────────
