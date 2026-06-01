@@ -1076,7 +1076,12 @@ function renderDrumKey(score, container) {
   grid.className = 'drumkey-grid';
   wrap.appendChild(grid);
 
-  const CW = 58, CH = 84;
+  // Each cell is a tiny 5-line percussion staff with the one piece on it, sized
+  // with generous headroom above/below so pieces that sit off the staff — high
+  // cymbals (above) and kick/floor-tom/foot-hat (below) — aren't clipped by the
+  // SVG viewBox. VexFlow reserves space above the staff by default, so we zero
+  // that and place the lines explicitly at STAVE_TOP within the CH-tall cell.
+  const CW = 64, CH = 96, STAVE_TOP = 30;
   for (const ent of entries) {
     const cell = document.createElement('div');
     cell.className = 'dk-cell';
@@ -1092,7 +1097,9 @@ function renderDrumKey(score, container) {
       const r = new VF.Renderer(art, VF.Renderer.Backends.SVG);
       r.resize(CW, CH);
       const ctx = r.getContext();
-      const stave = new VF.Stave(2, 22, CW - 6);
+      const stave = new VF.Stave(2, STAVE_TOP, CW - 8, {
+        space_above_staff_ln: 0, space_below_staff_ln: 0,
+      });
       stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
       stave.setContext(ctx).draw();
       const note = new VF.StaveNote({ keys: [ent.key], duration: 'q', stem_direction: -1 });
