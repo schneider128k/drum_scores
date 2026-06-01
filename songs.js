@@ -2,6 +2,60 @@
 // Re-run `python export_vexflow.py` (or add_song.py) to refresh.
 window.SONGS = [
   {
+    "id": "1024_6",
+    "song_id": 1024,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "AC/DC",
+    "title": "Back In Black",
+    "lyrics": true
+  },
+  {
+    "id": "289_6",
+    "song_id": 289,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "AC/DC",
+    "title": "Highway To Hell",
+    "lyrics": true
+  },
+  {
+    "id": "1352_6",
+    "song_id": 1352,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "AC/DC",
+    "title": "Thunderstruck",
+    "lyrics": true
+  },
+  {
+    "id": "3131_7",
+    "song_id": 3131,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "Bon Jovi",
+    "title": "Livin' On A Prayer",
+    "lyrics": true
+  },
+  {
+    "id": "329_5",
+    "song_id": 329,
+    "part_id": 5,
+    "instrument": "drums",
+    "artist": "Deep Purple",
+    "title": "Smoke On The Water",
+    "lyrics": true
+  },
+  {
+    "id": "86505_7",
+    "song_id": 86505,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "Foo Fighters",
+    "title": "Everlong",
+    "lyrics": true
+  },
+  {
     "id": "442661_8",
     "song_id": 442661,
     "part_id": 8,
@@ -29,12 +83,57 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "1401_4",
+    "song_id": 1401,
+    "part_id": 4,
+    "instrument": "drums",
+    "artist": "Green Day",
+    "title": "Basket Case",
+    "lyrics": true
+  },
+  {
+    "id": "23_8",
+    "song_id": 23,
+    "part_id": 8,
+    "instrument": "drums",
+    "artist": "Guns N' Roses",
+    "title": "Sweet Child O' Mine",
+    "lyrics": true
+  },
+  {
     "id": "19_8",
     "song_id": 19,
     "part_id": 8,
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Enter Sandman",
+    "lyrics": true
+  },
+  {
+    "id": "455118_9",
+    "song_id": 455118,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Metallica",
+    "title": "Master of Puppets",
+    "lyrics": true
+  },
+  {
+    "id": "439171_13",
+    "song_id": 439171,
+    "part_id": 13,
+    "instrument": "drums",
+    "artist": "Metallica",
+    "title": "Nothing Else Matters",
+    "lyrics": true
+  },
+  {
+    "id": "12719_9",
+    "song_id": 12719,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Mötley Crüe",
+    "title": "Kickstart My Heart",
     "lyrics": true
   },
   {
@@ -83,6 +182,24 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "2_11",
+    "song_id": 2,
+    "part_id": 11,
+    "instrument": "drums",
+    "artist": "Oasis",
+    "title": "Wonderwall",
+    "lyrics": true
+  },
+  {
+    "id": "50420_9",
+    "song_id": 50420,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Phil Collins",
+    "title": "In The Air Tonight",
+    "lyrics": true
+  },
+  {
     "id": "16093_3",
     "song_id": 16093,
     "part_id": 3,
@@ -92,12 +209,48 @@ window.SONGS = [
     "lyrics": false
   },
   {
+    "id": "371_6",
+    "song_id": 371,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "Queen",
+    "title": "Another One Bites the Dust",
+    "lyrics": true
+  },
+  {
     "id": "97_6",
     "song_id": 97,
     "part_id": 6,
     "instrument": "drums",
     "artist": "Radiohead",
     "title": "Creep",
+    "lyrics": true
+  },
+  {
+    "id": "360_7",
+    "song_id": 360,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "Rage Against The Machine",
+    "title": "Killing in the Name",
+    "lyrics": true
+  },
+  {
+    "id": "12_6",
+    "song_id": 12,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "Red Hot Chili Peppers",
+    "title": "Can't Stop",
+    "lyrics": true
+  },
+  {
+    "id": "287_6",
+    "song_id": 287,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "Rush",
+    "title": "Tom Sawyer",
     "lyrics": true
   },
   {
@@ -116,6 +269,42 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "The Cranberries",
     "title": "Zombie",
+    "lyrics": true
+  },
+  {
+    "id": "3706_7",
+    "song_id": 3706,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "The Police",
+    "title": "Message In A Bottle",
+    "lyrics": true
+  },
+  {
+    "id": "51025_15",
+    "song_id": 51025,
+    "part_id": 15,
+    "instrument": "drums",
+    "artist": "Toto",
+    "title": "Africa",
+    "lyrics": true
+  },
+  {
+    "id": "19993_18",
+    "song_id": 19993,
+    "part_id": 18,
+    "instrument": "drums",
+    "artist": "Toto",
+    "title": "Rosanna",
+    "lyrics": false
+  },
+  {
+    "id": "19632_3",
+    "song_id": 19632,
+    "part_id": 3,
+    "instrument": "drums",
+    "artist": "Van Halen",
+    "title": "Hot For Teacher",
     "lyrics": true
   }
 ];
