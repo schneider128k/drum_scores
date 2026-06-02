@@ -38,6 +38,33 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "27109_7",
+    "song_id": 27109,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "blink-182",
+    "title": "Dammit",
+    "lyrics": true
+  },
+  {
+    "id": "6703_7",
+    "song_id": 6703,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "blink-182",
+    "title": "First Date",
+    "lyrics": true
+  },
+  {
+    "id": "1386_8",
+    "song_id": 1386,
+    "part_id": 8,
+    "instrument": "drums",
+    "artist": "blink-182",
+    "title": "I Miss You",
+    "lyrics": true
+  },
+  {
     "id": "741_7",
     "song_id": 741,
     "part_id": 7,
@@ -146,6 +173,15 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "572_8",
+    "song_id": 572,
+    "part_id": 8,
+    "instrument": "drums",
+    "artist": "Metallica",
+    "title": "For Whom The Bell Tolls",
+    "lyrics": true
+  },
+  {
     "id": "455118_9",
     "song_id": 455118,
     "part_id": 9,
@@ -161,6 +197,24 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Nothing Else Matters",
+    "lyrics": true
+  },
+  {
+    "id": "444_12",
+    "song_id": 444,
+    "part_id": 12,
+    "instrument": "drums",
+    "artist": "Metallica",
+    "title": "One",
+    "lyrics": true
+  },
+  {
+    "id": "317_11",
+    "song_id": 317,
+    "part_id": 11,
+    "instrument": "drums",
+    "artist": "Metallica",
+    "title": "Sad But True",
     "lyrics": true
   },
   {
