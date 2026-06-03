@@ -744,7 +744,11 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   // measure i+1's start share a score position) but different x would teleport
   // the bar across the bar-line gap. Instead the bar glides straight from the
   // last note of one bar through the bar line to the first note of the next.
-  const rowAnchors = [];
+  // One cursor anchor per BARLINE: each bar's downbeat second → its note-start x.
+  // (Was one per notehead, which made the cursor accelerate across the trailing-rest
+  // + bar-line gap after a bar's last note. Bar widths are ~proportional to duration,
+  // so barline anchors give a near-constant-slope ramp = steady cursor speed.)
+  const corners = [];
   let rowYTop = null, rowYBottom = null;
   let rowStartPos = null, rowStartX = 0, rowEndPos = 0, rowEndX = 0;
 
@@ -768,6 +772,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     if (SCHED) {
       const mStart = m.position[0] / m.position[1];
       const mEnd = mStart + m.duration[0] / m.duration[1];
+      corners.push({ seconds: SCHED.at(mStart), x: stave.getNoteStartX() });
       if (rowStartPos === null) {
         rowStartPos = mStart;
         rowStartX = stave.getNoteStartX();
@@ -906,14 +911,8 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     }
 
     // Collect this bar's lyrics (drawn together afterwards so hyphens can span
-    // bar lines) and the per-note cursor anchors (bar lands on each notehead).
+    // bar lines). Cursor anchors are per-barline now (captured above), not per-note.
     for (const n of notes) {
-      if (SCHED && n.__abspos != null && !(n.isRest && n.isRest())) {
-        rowAnchors.push({
-          seconds: SCHED.at(n.__abspos),
-          x: (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2,
-        });
-      }
       if (!n.__lyric) continue;
       rowLyrics.push({ x: (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2, text: n.__lyric, cont: n.__cont });
     }
@@ -923,27 +922,14 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
 
   if (!SCHED || rowStartPos === null) return null;
 
-  // Noteheads are already in rowAnchors (left→right = increasing time). Add a
-  // left-edge anchor ONLY when there's a real gap before the first note (a
-  // leading rest / anacrusis); when the first note is on the downbeat it IS
-  // the start, and a same-time left-edge anchor would jump the bar onto it.
-  // Always add a right-edge anchor so the bar reaches the row's end exactly at
-  // the bar line (the only place a screen jump is wanted — the line wrap) and
-  // so row k's endSec == row k+1's startSec for a seamless hand-off.
+  // Close the row with a right-edge anchor at the last bar line, so the cursor
+  // reaches the row's end exactly there (the one place a screen jump is wanted —
+  // the line wrap) and row k's endSec == row k+1's startSec for a seamless hand-off.
+  // Then drop any anchors that collapse to the same instant (float-dupe safety).
   const EPS = 1e-4;
-  const startSec = SCHED.at(rowStartPos);
-  const endSec = SCHED.at(rowEndPos);
-  rowAnchors.sort((a, b) => a.seconds - b.seconds);
-  if (!rowAnchors.length || rowAnchors[0].seconds > startSec + EPS) {
-    rowAnchors.unshift({ seconds: startSec, x: rowStartX });
-  }
-  if (!rowAnchors.length || rowAnchors[rowAnchors.length - 1].seconds < endSec - EPS) {
-    rowAnchors.push({ seconds: endSec, x: rowEndX });
-  }
-  // Drop any anchors that collapse to the same instant (safety against float
-  // dupes); equal-time/different-x pairs are exactly what caused the jerk.
+  corners.push({ seconds: SCHED.at(rowEndPos), x: rowEndX });
   const anchors = [];
-  for (const a of rowAnchors) {
+  for (const a of corners) {
     if (anchors.length && a.seconds - anchors[anchors.length - 1].seconds < EPS) continue;
     anchors.push(a);
   }
@@ -962,7 +948,8 @@ function renderScore(score, container, opts) {
   opts = opts || {};
   const print = !!opts.print;
   const measures = score.measures;
-  const lyrics = score.lyrics || [];
+  // Lyrics gated by the user's setting (PlayerUI); empty array = none drawn.
+  const lyrics = (window.PlayerUI && !PlayerUI.lyricsOn()) ? [] : (score.lyrics || []);
   ROWS = [];
   MEASURE_BOXES = [];
   container.innerHTML = '';
@@ -1179,6 +1166,36 @@ function makeBar() {
   ACTIVE_ROW = 0;
 }
 
+// Cursor line mode (shared setting): 'on' always shown, 'peek' hidden until you tap
+// the score, 'off' never shown. The teleprompter still SCROLLS to keep the current
+// row centred regardless — only the green bar's visibility changes.
+let _cursorPeekTimer = null;
+function applyLineMode() {
+  if (!BAR_RECT) return;
+  const mode = window.PlayerUI ? PlayerUI.lineMode('on') : 'on';
+  clearTimeout(_cursorPeekTimer);
+  BAR_RECT.style.opacity = (mode === 'on') ? '1' : '0';
+}
+function peekCursor() {
+  if (!BAR_RECT || !window.PlayerUI || PlayerUI.lineMode('on') !== 'peek') return;
+  BAR_RECT.style.opacity = '1';
+  clearTimeout(_cursorPeekTimer);
+  _cursorPeekTimer = setTimeout(() => { if (BAR_RECT) BAR_RECT.style.opacity = '0'; }, 1800);
+}
+
+// Re-render the score on screen (e.g. lyrics toggled) and restore the cursor + loop.
+function rerenderScore() {
+  if (!SCORE_REF) return;
+  renderScore(SCORE_REF, document.getElementById('score'));
+  if (SCHED && ROWS.length) { makeBar(); applyLineMode(); }
+  drawLoopMarkers();
+}
+
+function printNow(orientation) {
+  enterPrint(orientation);
+  setTimeout(() => window.print(), 60);
+}
+
 // Monotone cubic (Fritsch–Carlson) tangents for the (seconds → x) anchor data.
 // Piecewise-linear interpolation makes the cursor's pixel VELOCITY step at every
 // note and jump at every bar line (the recording's per-measure tempo changes) — what
@@ -1326,7 +1343,9 @@ function startBarLoop() {
     if (YT_READY && SYNCED && (IS_PLAYING || loopSeeking)) {
       clkPredict(tau);                 // advance the smooth phase
       clkCorrect();                    // fuse a fresh YT sample if there is one
-      let t = CLK_M + LATENCY_LEAD;
+      // Subtract the user's Bluetooth audio-delay so the cursor matches what's HEARD.
+      // (Loop seek/end checks below use CLK_M, not t, so practice loops are unaffected.)
+      let t = CLK_M + LATENCY_LEAD - (window.PlayerUI ? PlayerUI.delaySec() : 0);
       // Monotonic latch: while playing the bar never steps back, independent of
       // gain tuning. A seek/resync releases it (CLK_OUT was reset in clkHardSet).
       if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
@@ -1367,7 +1386,7 @@ function playerState() {
 function onTransport() {
   if (!YT_READY) return;
   switch (playerState()) {
-    case 'IDLE':    STARTED = true; try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {} YT_PLAYER.playVideo(); break;
+    case 'IDLE':    STARTED = true; try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {} YT_PLAYER.playVideo(); if (window.PlayerUI) PlayerUI.maybeShowSyncHint(); break;
     case 'PRESYNC': doSync(); break;
     case 'PLAYING': YT_PLAYER.pauseVideo(); break;
     case 'PAUSED':  YT_PLAYER.playVideo(); break;
@@ -1403,6 +1422,7 @@ function doSync() {
   clkResync();
   if (LOOP_ON) seekToLoopStart();   // jump straight to the practice region once we're past the ad
   refreshTransport();
+  if (window.PlayerUI) PlayerUI.maybeShowDelayHint();   // one-time first-Sync nudge
 }
 
 // ── Loop / section repeat ─────────────────────────────────────────────────────
@@ -1644,15 +1664,23 @@ function wireControls() {
   if (slower) slower.addEventListener('click', () => setRate(-1));
   if (faster) faster.addEventListener('click', () => setRate(+1));
 
-  // Overflow (⋮) menu: toggle on its button, close on any outside click.
-  const moreBtn = document.getElementById('morebtn');
-  const moreMenu = document.getElementById('moremenu');
-  if (moreBtn && moreMenu) {
-    moreBtn.addEventListener('click', e => { e.stopPropagation(); moreMenu.hidden = !moreMenu.hidden; });
-    document.addEventListener('click', e => {
-      if (!moreMenu.hidden && !moreMenu.contains(e.target) && e.target !== moreBtn) moreMenu.hidden = true;
-    });
-  }
+  // Tap the score to peek at the cursor (when the line mode is "Peek").
+  const scoreEl = document.getElementById('score');
+  if (scoreEl) scoreEl.addEventListener('pointerdown', peekCursor);
+
+  // Gear → shared settings panel.
+  if (window.PlayerUI) PlayerUI.mount({
+    slot: document.getElementById('gear-slot'),
+    viewSwitch: { mode: 'teleprompter' },
+    defaults: { lineMode: 'on' },                  // the teleprompter cursor is on by default
+    show: { print: true, lyrics: true },
+    on: {
+      lineMode: () => applyLineMode(),
+      delay: () => {},                             // read live in the bar loop
+      lyrics: () => rerenderScore(),              // re-render with/without the lyric line
+      print: (orient) => printNow(orient),
+    },
+  });
 
   // Loop popover: toggle on its button, close on any outside click.
   const loopBtn = document.getElementById('loopbtn');
@@ -1671,11 +1699,6 @@ function wireControls() {
   // Fade-bars change: re-apply so the play range, hint, and (if playing) seek update.
   const fade = document.getElementById('loopFade');
   if (fade) fade.addEventListener('change', () => { if (LOOP_ON) applyLoop(); });
-}
-
-function closeMoreMenu() {
-  const m = document.getElementById('moremenu');
-  if (m) m.hidden = true;
 }
 
 function buildMeasureTimeline(score) {
@@ -1749,11 +1772,8 @@ function setupPrint(score) {
     hdr.querySelector('.pt').textContent = `${score.artist} — ${score.title}`;
     hdr.querySelector('.ps').textContent = sub.join('  ·  ');
   }
-  const doPrint = orientation => { closeMoreMenu(); enterPrint(orientation); setTimeout(() => window.print(), 60); };
-  const pL = document.getElementById('printLandscape');
-  if (pL) pL.addEventListener('click', () => doPrint('landscape'));
-  const pP = document.getElementById('printPortrait');
-  if (pP) pP.addEventListener('click', () => doPrint('portrait'));
+  // Print is triggered from the gear panel (printNow); here we just set up the
+  // header, the default page style, and the browser print-event hooks.
   setPageStyle(PRINT_ORIENTATION);                        // sensible default for a direct Ctrl+P
   window.addEventListener('beforeprint', () => enterPrint());
   window.addEventListener('afterprint', exitPrint);
@@ -1786,16 +1806,42 @@ function boot() {
 
   renderScore(score, document.getElementById('score'));
 
+  // ?probe=1 — report the worst within-row cursor-velocity spread (smoothness check).
+  if (new URLSearchParams(location.search).get('probe') && ROWS.length) {
+    const spreads = ROWS.map((row, ri) => {
+      const t0 = row.startSec, t1 = row.endSec, N = 400, dt = (t1 - t0) / N;
+      if (!(dt > 0)) return 0;
+      let vmin = Infinity, vmax = -Infinity;
+      for (let k = 0; k < N; k++) {
+        const v = (xAtTime(row, t0 + (k + 1) * dt) - xAtTime(row, t0 + k * dt)) / dt;
+        vmin = Math.min(vmin, v); vmax = Math.max(vmax, v);
+      }
+      const mean = (xAtTime(row, t1) - xAtTime(row, t0)) / (t1 - t0);
+      return mean > 0 ? (vmax - vmin) / mean * 100 : 0;
+    });
+    const worst = Math.max(...spreads), worstRow = spreads.indexOf(worst);
+    const body = spreads.slice(1);   // exclude the intro row (clef + meter change)
+    const worstBody = Math.max(...body), worstBodyRow = spreads.indexOf(worstBody);
+    const st0 = document.getElementById('status');
+    if (st0) st0.textContent = `probe: worst spread ${worst.toFixed(1)}% (row ${worstRow}); excl. intro ${worstBody.toFixed(1)}% (row ${worstBodyRow}) of ${ROWS.length}`;
+  }
+
   wireControls();
   setupPrint(score);
   window.addEventListener('resize', onResize);
 
   if (SCHED && ROWS.length && score.youtube_id) {
     makeBar();
+    applyLineMode();
     initYt(score.youtube_id);
     startBarLoop();
   }
   refreshTransport();
+
+  // ?print=landscape|portrait — auto-open the print dialog (used by the conveyor's
+  // "Print" action, which hands off to this sheet view).
+  const pParam = (new URLSearchParams(location.search).get('print') || '').toLowerCase();
+  if (pParam === 'landscape' || pParam === 'portrait') setTimeout(() => printNow(pParam), 200);
 
   // Optional ?loop=<start>-<end>[&fade=<n>] deep link (e.g. ?song=14_6&loop=27-30):
   // pre-set a practice loop so it can be shared/bookmarked. Takes effect on the next

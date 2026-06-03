@@ -61,25 +61,6 @@
     .spacer { flex: 1 1 auto; }
     #yt { width: 160px; height: 90px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     #yt iframe { border-radius: 6px; }
-    /* Overflow menu — rarely-used actions kept out of the resting dock. */
-    .more-wrap { position: relative; flex: 0 0 auto; }
-    #morebtn {
-      min-height: 44px; min-width: 44px; font-size: 22px; line-height: 1;
-      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #555; cursor: pointer;
-    }
-    #moremenu {
-      position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 11;
-      display: flex; flex-direction: column; gap: 4px; min-width: 150px;
-      background: #fff; border: 1px solid #d8d8d8; border-radius: 12px; padding: 6px;
-      box-shadow: 0 6px 24px rgba(0,0,0,0.16);
-    }
-    #moremenu[hidden] { display: none; }
-    #moremenu button, #moremenu a {
-      display: block; text-align: left; text-decoration: none;
-      font: inherit; font-size: 15px; color: #1a1a1a;
-      padding: 11px 12px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; white-space: nowrap;
-    }
-    #moremenu button:hover, #moremenu a:hover { background: #f0f0f0; }
 
     /* Loop / section repeat: a dock button that opens a from–to bar picker. */
     .loop-wrap { position: relative; flex: 0 0 auto; }
@@ -111,6 +92,16 @@
       #transport { min-width: 96px; padding: 0 16px; }
     }
     #errlog { color: #c00; background: #ffe; padding: 8px; margin: 8px 3%; border-radius: 4px; white-space: pre-wrap; display: none; }
+
+    /* Small home link pinned to a screen corner — out of the controls, always reachable. */
+    .home {
+      position: fixed; top: 10px; right: 14px; z-index: 13; text-decoration: none;
+      font-size: 13px; font-weight: 600; color: #888;
+      background: rgba(255,255,255,0.82); border: 1px solid #e2e2e2; border-radius: 999px;
+      padding: 6px 12px; backdrop-filter: blur(4px);
+    }
+    .home:hover { color: #1a1a1a; }
+    @media print { .home { display: none !important; } }
 
     /* Drum key — generated from the score's pieces, drawn at the bottom of #score. */
     .drumkey { margin: 30px auto 0; border-top: 1px solid #e4e4e4; padding-top: 14px; }
@@ -145,6 +136,7 @@
 </head>
 <body>
   <pre id="errlog"></pre>
+  <a class="home" href="../index.html" aria-label="All songs">‹ Songs</a>
   <div id="print-header"></div>
   <div id="score"></div>
 
@@ -183,14 +175,7 @@
       </span>
       <span class="spacer"></span>
       <div id="yt"></div>
-      <div class="more-wrap">
-        <button id="morebtn" aria-label="More" aria-haspopup="true">⋮</button>
-        <div id="moremenu" hidden>
-          <button id="printLandscape">Print — landscape</button>
-          <button id="printPortrait">Print — portrait</button>
-          <a class="back" href="../index.html">‹ All songs</a>
-        </div>
-      </div>
+      <span id="gear-slot"></span>
     </div>
   </div>
 
@@ -212,6 +197,7 @@
   </script>
 
   <script src="vexflow.js"></script>
+  <script src="player_common.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

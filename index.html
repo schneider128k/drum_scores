@@ -59,7 +59,21 @@
     .search.has-text .clear { display: block; }
 
     /* ── Instrument chips ─────────────────────────────────────── */
-    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 24px; }
+    .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+
+    /* ── View toggle (Conveyor / Teleprompter) ────────────────── */
+    .viewbar { display: flex; align-items: center; gap: 10px; margin: 4px 2px 24px; }
+    .viewlabel { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--hair); border-radius: 999px; padding: 3px; gap: 2px; }
+    .seg-btn {
+      appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
+      color: var(--muted); background: transparent; border: 0; border-radius: 999px;
+      padding: 7px 14px; transition: background .12s, color .12s;
+    }
+    .seg-btn:hover:not(.on) { color: var(--fg); }
+    .seg-btn.on { background: var(--accent); color: var(--accent-ink); }
+    .viewbar .hint { font-size: 12px; color: var(--muted); }
+    @media (max-width: 480px) { .viewbar .hint { display: none; } }
     .chip {
       appearance: none; cursor: pointer; font: inherit;
       font-size: 13px; font-weight: 600; color: var(--muted);
@@ -129,6 +143,15 @@
 
     <div class="chips" id="chips" role="tablist" aria-label="Instrument"></div>
 
+    <div class="viewbar">
+      <span class="viewlabel">View</span>
+      <div class="seg" id="viewseg" role="tablist" aria-label="Playback view">
+        <button class="seg-btn" data-view="conveyor" role="tab">Conveyor</button>
+        <button class="seg-btn" data-view="teleprompter" role="tab">Teleprompter</button>
+      </div>
+      <span class="hint" id="viewhint"></span>
+    </div>
+
     <div id="list"></div>
 
     <div class="footer">
@@ -150,8 +173,20 @@ const INSTRUMENTS = [
   { key: 'bass',   label: 'Bass'   },
 ];
 
+// Playback view: the scrolling single-line "conveyor" (default) or the page-flip
+// "teleprompter". Persisted so a returning student keeps their pick.
+const PLAYERS = {
+  conveyor:     { file: 'vexflow/conveyor.html', hint: 'One big line that scrolls past — tap the score to peek at your spot.' },
+  teleprompter: { file: 'vexflow/player.html',   hint: 'Sheet-music rows with a moving cursor.' },
+};
+const VIEW_KEY = 'drumScores.view';
+let view = localStorage.getItem(VIEW_KEY);
+if (!PLAYERS[view]) view = 'conveyor';
+
 const listEl = document.getElementById('list');
 const chipsEl = document.getElementById('chips');
+const viewSegEl = document.getElementById('viewseg');
+const viewHintEl = document.getElementById('viewhint');
 const qEl = document.getElementById('q');
 const searchEl = document.getElementById('search');
 const clearEl = document.getElementById('clear');
@@ -215,7 +250,7 @@ function renderList() {
   for (const g of byArtist) {
     html += `<div class="group-head">${highlight(g.artist)}</div><ul class="songs">`;
     for (const s of g.items) {
-      html += `<li><a href="vexflow/player.html?song=${encodeURIComponent(s.id)}">`
+      html += `<li><a href="${PLAYERS[view].file}?song=${encodeURIComponent(s.id)}">`
            +  `<span class="title">${highlight(s.title)}</span>`
            +  (s.lyrics ? `<span class="tag">lyrics</span>` : ``)
            +  `<span class="go">›</span></a></li>`;
@@ -232,10 +267,29 @@ function setInstrument(key) {
   renderList();
 }
 
-function render() { renderChips(); renderList(); }
+function renderViewSeg() {
+  for (const b of viewSegEl.querySelectorAll('.seg-btn')) {
+    const on = b.dataset.view === view;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on);
+  }
+  viewHintEl.textContent = PLAYERS[view].hint;
+}
+function setView(key) {
+  if (!PLAYERS[key]) return;
+  view = key;
+  localStorage.setItem(VIEW_KEY, key);
+  renderViewSeg();
+  renderList();   // re-point every song link at the chosen player
+}
+
+function render() { renderChips(); renderViewSeg(); renderList(); }
 
 chipsEl.addEventListener('click', e => {
   const btn = e.target.closest('.chip'); if (btn) setInstrument(btn.dataset.i);
+});
+viewSegEl.addEventListener('click', e => {
+  const btn = e.target.closest('.seg-btn'); if (btn) setView(btn.dataset.view);
 });
 
 qEl.addEventListener('input', () => {

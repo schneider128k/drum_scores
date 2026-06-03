@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drum score — conveyor</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fafafa;
+      color: #1a1a1a;
+      overflow: hidden;
+    }
+
+    /* The stage owns everything above the dock: one big horizontal lane the
+       notation strip scrolls through. The strip is vertically centred and scaled
+       up to fill this lane — only ONE line, so the engraving gets the full height. */
+    #stage {
+      position: fixed; left: 0; right: 0; top: 0; bottom: 96px;
+      display: flex; align-items: center;
+      overflow: hidden;
+      background: #fafafa;
+    }
+    /* The single wide <svg> lives here; we drive it with a CSS transform so the
+       scroll happens on the compositor (no per-frame SVG relayout). */
+    #strip { flex: none; will-change: transform; }
+    #strip svg { display: block; }
+
+    /* "Now" line. HIDDEN by default: over a Bluetooth speaker the audio lags the
+       video by a variable amount, so a hard always-on line would look out of sync
+       with what you HEAR. Tapping the score flashes it for a moment so you can
+       peek at roughly where you are, then it fades back out. */
+    #playhead {
+      position: absolute; top: 0; bottom: 0; width: 0;
+      border-left: 2px solid rgba(54,179,90,0.95);
+      box-shadow: 0 0 14px 2px rgba(54,179,90,0.30);
+      pointer-events: none;
+      opacity: 0; transition: opacity .3s ease;
+    }
+    #playhead.peek { opacity: 1; }
+    #playhead::before, #playhead::after {
+      content: ""; position: absolute; left: -7px; width: 12px; height: 12px;
+      background: #36b35a; transform: rotate(45deg);
+    }
+    #playhead::before { top: 10px; }
+    #playhead::after  { bottom: 10px; }
+    /* Soft fade at the lane's left/right edges so notes ease in/out, not pop. */
+    #stage::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(90deg, #fafafa 0%, rgba(250,250,250,0) 9%,
+                  rgba(250,250,250,0) 91%, #fafafa 100%);
+    }
+
+    #bignow {
+      position: absolute; left: 16px; top: 12px; z-index: 3;
+      font-size: 13px; font-weight: 700; letter-spacing: .03em;
+      color: #999; pointer-events: none;
+    }
+
+    /* Small home link pinned to a screen corner — out of the controls, always reachable. */
+    .home {
+      position: fixed; top: 10px; right: 14px; z-index: 13; text-decoration: none;
+      font-size: 13px; font-weight: 600; color: #888;
+      background: rgba(255,255,255,0.82); border: 1px solid #e2e2e2; border-radius: 999px;
+      padding: 6px 12px; backdrop-filter: blur(4px);
+    }
+    .home:hover { color: #1a1a1a; }
+
+    /* Bottom dock — Play/Sync/Pause hero, speed, the video, a back link. */
+    #dock {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+      display: flex; flex-direction: column; gap: 4px;
+      background: rgba(250,250,250,0.97);
+      backdrop-filter: saturate(1.2) blur(6px);
+      border-top: 1px solid #e2e2e2;
+      padding: 7px 3% 9px;
+    }
+    .dock-top { display: flex; align-items: baseline; gap: 12px; min-height: 16px; }
+    #status { font-size: 13px; font-weight: 600; color: #555; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint { font-size: 12px; color: #1f8f43; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint:empty { display: none; }
+
+    .dock-row { display: flex; align-items: center; gap: 14px; }
+    #transport {
+      min-height: 54px; min-width: 116px; padding: 0 22px;
+      font-size: 17px; font-weight: 700;
+      border: 0; border-radius: 14px;
+      background: #36b35a; color: #fff; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+    }
+    #transport:disabled { background: #cbcbcb; cursor: default; box-shadow: none; }
+    #transport.attention { background: #1f8f43; box-shadow: 0 0 0 4px rgba(54,179,90,0.22); }
+    .speed { display: inline-flex; align-items: center; gap: 6px; }
+    .speed .cap { font-size: 12px; color: #999; margin-right: 2px; }
+    .speed button {
+      min-height: 44px; min-width: 44px; font-size: 20px; line-height: 1;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer;
+    }
+    #rate { min-width: 50px; text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .zoom { display: inline-flex; align-items: center; gap: 6px; }
+    .zoom .cap { font-size: 12px; color: #999; margin-right: 2px; }
+    .zoom button {
+      min-height: 44px; min-width: 44px; font-size: 20px; line-height: 1;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; color: #1a1a1a; cursor: pointer;
+    }
+    .spacer { flex: 1 1 auto; }
+    #yt { width: 160px; height: 90px; background: #000; border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
+    #yt iframe { border-radius: 6px; }
+    .back {
+      min-height: 44px; display: inline-flex; align-items: center;
+      padding: 0 14px; text-decoration: none; font-size: 15px; color: #1a1a1a;
+      border: 1px solid #cfcfcf; border-radius: 10px; background: #fff; white-space: nowrap;
+    }
+    @media (max-width: 700px) {
+      #yt { width: 120px; height: 68px; }
+      #transport { min-width: 96px; padding: 0 16px; }
+      #dock { padding-bottom: 7px; }
+      #stage { bottom: 150px; }
+    }
+    #errlog { color: #c00; background: #ffe; padding: 8px; margin: 8px 3%; border-radius: 4px; white-space: pre-wrap; display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 99; }
+  </style>
+</head>
+<body>
+  <pre id="errlog"></pre>
+
+  <a class="home" href="../index.html" aria-label="All songs">‹ Songs</a>
+
+  <div id="stage">
+    <div id="bignow">Conveyor</div>
+    <div id="strip"></div>
+    <div id="playhead"></div>
+  </div>
+
+  <div id="dock">
+    <div class="dock-top">
+      <span id="status">Loading…</span>
+      <span id="hint"></span>
+    </div>
+    <div class="dock-row">
+      <button id="transport" disabled>▶ Play</button>
+      <span class="speed">
+        <span class="cap">Speed</span>
+        <button id="slower" aria-label="Slower">−</button>
+        <span id="rate">100%</span>
+        <button id="faster" aria-label="Faster">+</button>
+      </span>
+      <span class="spacer"></span>
+      <div id="yt"></div>
+      <span id="gear-slot"></span>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('error', e => {
+      const log = document.getElementById('errlog');
+      log.style.display = 'block';
+      log.textContent += '\nERROR: ' + e.message + '\n  at ' + e.filename + ':' + e.lineno + ':' + e.colno;
+    });
+  </script>
+
+  <!-- Load the score chosen by ?song=<id>_<part>; default to Square Hammer. -->
+  <script>
+    (function () {
+      const id = (new URLSearchParams(location.search).get('song') || '412647_8').replace(/[^0-9_]/g, '');
+      document.write('<script src="score_' + id + '.js"><\/script>');
+    })();
+  </script>
+
+  <script src="vexflow.js"></script>
+  <script src="player_common.js"></script>
+  <script src="conveyor.js"></script>
+</body>
+</html>
