@@ -1,5 +1,7 @@
 # Drum Scores
 
+![A knight at a drum kit blasting a goblin back with a beam of sound — "The Goblin wants to detune the drums · Keep it away with powerful blast beats"](splash.jpg)
+
 Interactive drum sheet music in your browser — built for music-school
 practice rooms and tested on iPad.
 
