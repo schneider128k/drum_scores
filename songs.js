@@ -425,13 +425,13 @@ window.SONGS = [
     "lyrics": true
   },
   {
-    "id": "19775_12",
-    "song_id": 19775,
-    "part_id": 12,
+    "id": "29601_10",
+    "song_id": 29601,
+    "part_id": 10,
     "instrument": "drums",
     "artist": "Type O Negative",
-    "title": "Christian Woman",
-    "lyrics": false
+    "title": "Love You To Death",
+    "lyrics": true
   },
   {
     "id": "19632_3",
