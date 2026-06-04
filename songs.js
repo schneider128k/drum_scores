@@ -344,6 +344,33 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "1379_9",
+    "song_id": 1379,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Slipknot",
+    "title": "Before I Forget",
+    "lyrics": true
+  },
+  {
+    "id": "18211_9",
+    "song_id": 18211,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Slipknot",
+    "title": "Duality",
+    "lyrics": true
+  },
+  {
+    "id": "19615_12",
+    "song_id": 19615,
+    "part_id": 12,
+    "instrument": "drums",
+    "artist": "Slipknot",
+    "title": "Psychosocial",
+    "lyrics": true
+  },
+  {
     "id": "89089_8",
     "song_id": 89089,
     "part_id": 8,
@@ -386,6 +413,24 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Toto",
     "title": "Rosanna",
+    "lyrics": false
+  },
+  {
+    "id": "20359_9",
+    "song_id": 20359,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Type O Negative",
+    "title": "Black No. 1 (Little Miss Scare-All)",
+    "lyrics": true
+  },
+  {
+    "id": "19775_12",
+    "song_id": 19775,
+    "part_id": 12,
+    "instrument": "drums",
+    "artist": "Type O Negative",
+    "title": "Christian Woman",
     "lyrics": false
   },
   {
