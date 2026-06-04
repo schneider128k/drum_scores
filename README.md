@@ -1,9 +1,10 @@
-# Drum Scores
+# Beatslayer
 
 ![A knight at a drum kit blasting a goblin back with a beam of sound — "The Goblin wants to detune the drums · Keep it away with powerful blast beats"](splash.jpg)
 
 Interactive drum sheet music in your browser — built for music-school
-practice rooms and tested on iPad.
+practice rooms and tested on iPad. Sibling of
+[Fretslayer](https://schneider128k.github.io/guitar/), the guitar trainer.
 
 **Live site:** https://schneider128k.github.io/drum_scores/
 
