@@ -217,8 +217,8 @@
     <div class="viewbar">
       <span class="viewlabel">View</span>
       <div class="seg" id="viewseg" role="tablist" aria-label="Playback view">
-        <button class="seg-btn" data-view="conveyor" role="tab">Conveyor</button>
         <button class="seg-btn" data-view="teleprompter" role="tab">Teleprompter</button>
+        <button class="seg-btn" data-view="conveyor" role="tab">Conveyor</button>
       </div>
       <span class="hint" id="viewhint"></span>
     </div>
@@ -296,7 +296,7 @@ const PLAYERS = {
 };
 const VIEW_KEY = 'drumScores.view';
 let view = localStorage.getItem(VIEW_KEY);
-if (!PLAYERS[view]) view = 'conveyor';
+if (!PLAYERS[view]) view = 'teleprompter';
 
 const listEl = document.getElementById('list');
 const chipsEl = document.getElementById('chips');
