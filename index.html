@@ -193,6 +193,22 @@
     <div class="splash-bar"><div class="splash-bar-fill"></div></div>
     <p class="splash-skip">click anywhere to skip</p>
   </div>
+  <script>
+    // Show the splash only on a fresh visit — not every time you return to the
+    // landing page from a player. If it was shown within the last hour, hide it
+    // instantly (inline + synchronous, so there's no flash before paint).
+    (function () {
+      var SPLASH_TTL = 3600000;  // 1 hour
+      try {
+        var last = +localStorage.getItem('beatslayer.splashSeen') || 0;
+        if (Date.now() - last < SPLASH_TTL) {
+          document.getElementById('splash').style.display = 'none';
+        } else {
+          localStorage.setItem('beatslayer.splashSeen', String(Date.now()));
+        }
+      } catch (e) { /* storage blocked — just show the splash */ }
+    })();
+  </script>
 
   <div class="layout">
     <h1>Beatslayer</h1>
@@ -235,8 +251,10 @@
 <script src="songs.js"></script>
 <script>
 // Splash: show the key art for a few seconds, then reveal the app (click skips).
+// The inline gate above may have hidden it (shown within the last hour) — in that
+// case skip the phrase/timer/listeners entirely.
 const splash = document.getElementById('splash');
-if (splash) {
+if (splash && splash.style.display !== 'none') {
   // A random battle cry on each load — keeps the theme fresh. On-theme with the
   // key art: the knight's blast beat is what keeps the goblin off the kit.
   const SPLASH_PHRASES = [
