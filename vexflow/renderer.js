@@ -389,6 +389,9 @@ function buildMeasureTickables(measure) {
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
     }
+    // Notehead glyph size (screen default 39; print 45 so the thin ✕ closed-hi-hat
+    // reads). Set before formatting so the spacing accounts for the larger heads.
+    if (n.render_options) n.render_options.glyph_font_scale = GLYPH_SCALE;
     tickables.push(n);
     if (t.tupId != null) {
       n.__tuplet = true;   // beamed as its own group, excluded from the general beamer
@@ -416,7 +419,12 @@ const ROW_TOP = 55;          // headroom above the stave for section label + acc
 // canvas just below the lyric line — cutting the empty headroom that caused the wide
 // gaps, without clipping section labels (top) or lyrics/beams (bottom).
 const PRINT_ROW_TOP = 16;
-const PRINT_ROW_HEIGHT = 168;
+const PRINT_ROW_HEIGHT = 188;   // taller than screen-crop: print spreads the drum lanes (below)
+// Print spreads the five staff lines further apart than the screen's 10px. On paper the
+// vertical POSITION is what distinguishes kick/snare/tom/cymbal (they share an oval head),
+// so wider lanes = faster sight-reading — the honest "a bit larger" lever when 4-bars-fill-
+// width fixes the overall scale. Screen keeps VexFlow's default (undefined → 10px).
+const PRINT_LINE_SPACING = 12;
 const PAGE_WIDTH = 1100;     // fallback width when the container hasn't laid out yet
 const MIN_PAGE_WIDTH = 360;  // floor so a tiny window still renders something legible
 const CLEF_W = 70;           // width the clef + time signature eat on the first row
@@ -430,23 +438,43 @@ const SIDE_MARGIN = 10;
 const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
-const LYRIC_COLOR = '#7a7a7a';
-const LYRIC_FONT = ['Arial', 9, 'normal'];   // smaller, like Songsterr — also lightens the width it reserves, so lyrics pull the note spacing less
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
 
-// Songsterr palette: the note heads are the only dark element; everything else
-// — staff, stems, beams, accents, section labels — is grey, so the eye lands
-// on the notes.
-const NOTE_COLOR = '#1a1a1a';
-const GHOST_COLOR = '#9a9a9a';   // ghost noteheads: clearly fainter than the black hits, darker than the staff
-const STAVE_COLOR = '#b6b6b6';
-const STAVE_LINE_WIDTH = 1;
-const STEM_COLOR = '#8c8c8c';
-const BEAM_COLOR = '#8c8c8c';
-const BEAM_WIDTH = 4;        // default is 5
-const ACCENT_COLOR = '#777';
-const SECTION_COLOR = '#777';
-const SECTION_FONT = ['Georgia', 13, 'normal', 'italic'];
+// Two palettes. SCREEN is the Songsterr look: note heads the only dark element,
+// everything else grey, so on a bright display the eye lands on the notes. PRINT
+// is high-contrast and heavier — on paper, in a dim music-room light, the grey
+// staff/stems/beams nearly vanish, so for the printout we darken every line, thicken
+// the staff/stems/beams, and enlarge+embolden the section labels and lyrics (the text
+// a player reads at a glance). The active palette is swapped per render by applyPalette()
+// (screen vs. print), so the same draw code serves both. Ghost notes stay clearly
+// lighter than the black hits in BOTH palettes.
+const SCREEN_PAL = {
+  NOTE: '#1a1a1a', GHOST: '#9a9a9a', STAVE: '#b6b6b6', STAVE_LW: 1,
+  STEM: '#8c8c8c', STEM_W: 1, BEAM: '#8c8c8c', BEAM_W: 4, ACCENT: '#777', SECTION: '#777',
+  NOTE_LW: 1, GLYPH: 39,                            // 39 = VexFlow default notehead scale
+  SEC_FONT: ['Georgia', 13, 'normal', 'italic'],   // grey italic, understated on screen
+  LYR_FONT: ['Arial', 9, 'normal'], LYR_COLOR: '#7a7a7a',
+};
+const PRINT_PAL = {
+  NOTE: '#000', GHOST: '#5a5a5a', STAVE: '#202020', STAVE_LW: 1.6,
+  STEM: '#141414', STEM_W: 3, BEAM: '#141414', BEAM_W: 5, ACCENT: '#000', SECTION: '#000',
+  NOTE_LW: 1.5, GLYPH: 45,                          // larger noteheads so the thin ✕ (closed hi-hat) reads;
+  SEC_FONT: ['Georgia', 17, 'bold'],               // spacing recomputes from the bigger heads, so no collisions
+  LYR_FONT: ['Arial', 11, 'bold'], LYR_COLOR: '#000',
+};
+let NOTE_COLOR, GHOST_COLOR, STAVE_COLOR, STAVE_LINE_WIDTH, STEM_COLOR, STEM_WIDTH,
+    BEAM_COLOR, BEAM_WIDTH, ACCENT_COLOR, SECTION_COLOR, NOTE_LINE_WIDTH, GLYPH_SCALE,
+    SECTION_FONT, LYRIC_FONT, LYRIC_COLOR, IS_PRINT;
+function applyPalette(print) {
+  const p = print ? PRINT_PAL : SCREEN_PAL;
+  NOTE_COLOR = p.NOTE; GHOST_COLOR = p.GHOST; STAVE_COLOR = p.STAVE;
+  STAVE_LINE_WIDTH = p.STAVE_LW; STEM_COLOR = p.STEM; STEM_WIDTH = p.STEM_W;
+  BEAM_COLOR = p.BEAM; BEAM_WIDTH = p.BEAM_W; ACCENT_COLOR = p.ACCENT;
+  SECTION_COLOR = p.SECTION; NOTE_LINE_WIDTH = p.NOTE_LW; GLYPH_SCALE = p.GLYPH;
+  SECTION_FONT = p.SEC_FONT; LYRIC_FONT = p.LYR_FONT; LYRIC_COLOR = p.LYR_COLOR;
+  IS_PRINT = !!print;
+}
+applyPalette(false);   // screen palette is the default until a render says otherwise
 
 function isFirstRow(rowIdx) { return rowIdx === 0; }
 function frac(f) { return f[0] / f[1]; }
@@ -756,7 +784,8 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   for (let i = 0; i < built.length; i++) {
     const { m, notes, voice, tuplets } = built[i];
     const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
-    const stave = new VF.Stave(x, rowTop, myWidth);
+    const stave = new VF.Stave(x, rowTop, myWidth,
+      IS_PRINT ? { spacing_between_lines_px: PRINT_LINE_SPACING } : undefined);
     // Thin grey staff lines / barlines / clef / measure number.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
@@ -859,9 +888,9 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // then grey the stems, ledger lines (matched to the staff) and beams.
     ctx.setFillStyle(NOTE_COLOR);
     ctx.setStrokeStyle(NOTE_COLOR);
-    ctx.setLineWidth(1);
+    ctx.setLineWidth(NOTE_LINE_WIDTH);
     for (const n of notes) {
-      if (n.setStemStyle) n.setStemStyle({ strokeStyle: STEM_COLOR });
+      if (n.setStemStyle) n.setStemStyle({ strokeStyle: STEM_COLOR, lineWidth: STEM_WIDTH });
       if (n.setLedgerLineStyle) {
         n.setLedgerLineStyle({ strokeStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
       }
@@ -947,6 +976,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
 function renderScore(score, container, opts) {
   opts = opts || {};
   const print = !!opts.print;
+  applyPalette(print);   // swap to the high-contrast/heavier palette for the printout
   const measures = score.measures;
   // Lyrics gated by the user's setting (PlayerUI); empty array = none drawn.
   const lyrics = (window.PlayerUI && !PlayerUI.lyricsOn()) ? [] : (score.lyrics || []);
@@ -1040,7 +1070,85 @@ function renderScore(score, container, opts) {
     }
   });
 
-  renderDrumKey(score, container);
+  // Drum key: on screen it trails the score. On print it moves onto the roadmap page
+  // IF the user opted into the song-map page (off by default); otherwise it trails the
+  // score as on screen. So the roadmap is opt-in and never forced.
+  const wantRoadmap = print && window.PlayerUI && PlayerUI.roadmapOn();
+  if (wantRoadmap) renderRoadmap(score, container);
+  else renderDrumKey(score, container);
+}
+
+// Print-only first page: a condensed "song map" you read before playing — the form
+// (section + bar range + length), the key facts, a proportional shape bar, and the
+// drum key — so the structure is internalised up front and the score pages that follow
+// are pure notation. Built from data every score already carries (per-measure marker +
+// time_sig, tempo_changes). Prepended to the container and given a page break after, so
+// the music starts on page 2.
+function renderRoadmap(score, container) {
+  const measures = score.measures || [];
+  if (!measures.length) return;
+
+  // Group consecutive measures into sections by their markers. A measure carries a
+  // marker only where a section opens; everything after extends the current section.
+  // Bars before the first marker (rare) become a leading untitled section.
+  const sections = [];
+  for (const m of measures) {
+    if (m.marker || !sections.length) {
+      sections.push({ name: m.marker || '—', start: m.index, end: m.index });
+    } else {
+      sections[sections.length - 1].end = m.index;
+    }
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'roadmap';
+
+  const bpm = score.tempo_changes[0]?.bpm;
+  const bpms = [...new Set((score.tempo_changes || []).map(t => t.bpm).filter(Boolean))];
+  const meters = [...new Set(measures.map(m => m.time_sig.join('/')))];
+  const facts = [`${measures.length} bars`];
+  if (bpms.length > 1) facts.push(`${bpms[0]}–${bpms[bpms.length - 1]} bpm`);
+  else if (bpm) facts.push(`${bpm} bpm`);
+  if (meters.length) facts.push(meters.join(', '));
+  if (score.drummer) facts.push(score.drummer);
+
+  let html =
+    `<div class="rm-title">${esc(score.artist)} — ${esc(score.title)}</div>` +
+    `<div class="rm-facts">${esc(facts.join('  ·  '))}</div>`;
+
+  // Proportional shape bar: one segment per section, width ∝ its bar count, so the
+  // song's form is graspable at a glance. Segments carry only a NUMBER (always fits a
+  // narrow block — section names would clip); the number keys into the map below.
+  // Grayscale alternation prints cleanly.
+  const total = measures.length;
+  html += `<div class="rm-shape">` + sections.map((s, i) => {
+    const len = s.end - s.start + 1;
+    const pct = (len / total * 100).toFixed(3);
+    return `<div class="rm-seg ${i % 2 ? 'b' : 'a'}" style="width:${pct}%" title="${esc(s.name)}">` +
+           `<span>${i + 1}</span></div>`;
+  }).join('') + `</div>`;
+
+  // The map itself: number · section · bar range · length, in reading order. The number
+  // matches the shape-bar segment above.
+  html += `<div class="rm-map-title">Song map</div><table class="rm-map"><tbody>` +
+    sections.map((s, i) => {
+      const len = s.end - s.start + 1;
+      const range = s.start === s.end ? `bar ${s.start}` : `bars ${s.start}–${s.end}`;
+      return `<tr><td class="rm-num">${i + 1}</td>` +
+             `<td class="rm-name">${esc(s.name)}</td>` +
+             `<td class="rm-range">${range}</td>` +
+             `<td class="rm-len">${len} ${len === 1 ? 'bar' : 'bars'}</td></tr>`;
+    }).join('') + `</tbody></table>`;
+
+  wrap.innerHTML = html;
+  container.insertBefore(wrap, container.firstChild);   // page 1
+  renderDrumKey(score, wrap);                           // drum key sits on the roadmap page
+}
+
+// Minimal HTML-escape for the text we inject into the roadmap (titles, section names).
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // A drum key at the bottom of the score: one mini percussion staff per piece
@@ -1724,22 +1832,42 @@ function onResize() {
 // ── Print to Letter ───────────────────────────────────────────────────────────
 // Re-lay the score forcing 4 bars/row (a phone-width screen is in 2-bar mode, but
 // the printout always wants the full structure), then `.row svg { width:100% }`
-// scales each system down to the page width. LANDSCAPE is the default: a Letter page
-// is wider that way, so 4 bars/row come out ~1.3× larger and more readable; PORTRAIT
-// stays available for fewer pages. The chosen orientation is written into an injected
-// `@page` rule before printing. enterPrint/exitPrint are idempotent and reached three
+// scales each system down to the page width. PORTRAIT is the default (Pawel fits three
+// portrait pages on the stand vs. two landscape); LANDSCAPE stays available for ~1.3×
+// larger staves. The chosen orientation is written into an injected `@page` rule before
+// printing, along with the running footer (Artist — Title · page N / total). enterPrint/exitPrint are idempotent and reached three
 // ways for cross-browser cover: the Print buttons, beforeprint/afterprint (desktop),
 // and a matchMedia('print') change (iPad Safari). Print also uses a tighter row crop
 // (PRINT_ROW_HEIGHT) so rows pack closer vertically — fewer pages.
 let _printing = false;
-let PRINT_ORIENTATION = 'landscape';   // 'landscape' (default, larger staff) | 'portrait'
+// PORTRAIT is the default: Pawel fits three portrait pages side by side on the music
+// stand (≈ a whole song at a glance) vs. only two in landscape. The staff is smaller
+// than landscape's, but the print palette (darker, heavier lines) keeps it legible.
+let PRINT_ORIENTATION = 'portrait';    // 'portrait' (default) | 'landscape'
 
-// Write the page orientation + small margins into an injected stylesheet so the
-// browser's print picks them up (a static @page can't be toggled at runtime).
+// Quote a string as a CSS <string> token for use in `content:`.
+function cssQuote(s) {
+  return '"' + String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
+// Write the page orientation + margins + a running footer into an injected stylesheet
+// so the browser's print picks them up (a static @page can't be toggled at runtime).
+// The footer lives in the page's BOTTOM MARGIN (an @page margin box), so it costs zero
+// score space, yet repeats on every page with "Artist — Title · page N / total" — so a
+// shuffled stack of printed pages can be reordered. counter(page)/counter(pages) and
+// @page margin boxes are honoured by Chrome's print engine (verified) — Pawel's browser.
 function setPageStyle(orientation) {
   let el = document.getElementById('page-style');
   if (!el) { el = document.createElement('style'); el.id = 'page-style'; document.head.appendChild(el); }
-  el.textContent = '@page { size: letter ' + orientation + '; margin: 0.3in 0.25in; }';
+  const s = SCORE_REF;
+  const label = s ? `${s.artist} — ${s.title}   ·   ` : '';
+  const foot = cssQuote(label) + ' "page " counter(page) " / " counter(pages)';
+  // Tight L/R margins (0.18in) so the 4 bars stretch nearly edge-to-edge — uses the
+  // width Pawel saw going to waste. Most printers' hardware margin is ≤0.17in, so this
+  // is about as wide as is safe; bottom stays roomy for the footer band.
+  el.textContent =
+    '@page { size: letter ' + orientation + '; margin: 0.3in 0.18in 0.55in 0.18in;' +
+    ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000; } }';
 }
 
 function enterPrint(orientation) {
@@ -1766,6 +1894,8 @@ function setupPrint(score) {
     const bpm = score.tempo_changes[0]?.bpm;
     const sub = [`${score.measures.length} bars`];
     if (bpm) sub.push(`${bpm} bpm`);
+    const meters = [...new Set((score.measures || []).map(m => m.time_sig.join('/')))];
+    if (meters.length) sub.push(meters.join(', '));
     if (score.drummer) sub.push(score.drummer);
     hdr.innerHTML =
       `<div class="pt"></div><div class="ps"></div>`;
@@ -1794,6 +1924,10 @@ function boot() {
   }
   SCORE_REF = score;
   document.title = `${score.artist} — ${score.title}`;
+  // ?map=1 / ?map=0 deep-links (and overrides) the print song-map page setting, so a
+  // print-with-map can be shared/bookmarked; otherwise the gear-panel toggle decides.
+  const mapParam = new URLSearchParams(location.search).get('map');
+  if ((mapParam === '1' || mapParam === '0') && window.PlayerUI) PlayerUI.setRoadmap(mapParam === '1');
   const st = document.getElementById('status');
   // The status line shows the song before play and the live bar/section readout
   // once the cursor is running (updateStatus overwrites it).
