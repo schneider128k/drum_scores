@@ -164,6 +164,15 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "487_6",
+    "song_id": 487,
+    "part_id": 6,
+    "instrument": "drums",
+    "artist": "Megadeth",
+    "title": "Symphony Of Destruction",
+    "lyrics": true
+  },
+  {
     "id": "19_8",
     "song_id": 19,
     "part_id": 8,
