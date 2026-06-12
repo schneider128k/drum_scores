@@ -389,15 +389,18 @@
   // source of truth: Pawel edits, exports it, and pushes it; students pull it. No
   // server, no auth — repo write-access is the access control.
   //
-  // Op format (overrides_<id>_<part>.json):
-  //   { "song_id": 16093, "part_id": 3, "ops": [
-  //       { "type":"change", "bar":3, "beat":1, "from":"closedhihat", "to":"openhihat" }
-  //   ] }
+  // Op format (overrides_<id>_<part>.json). All ops key on bar + beat:
+  //   change: { type:"change", bar, beat, from:"closedhihat", to:"openhihat" }
+  //            replace a piece (its staff line + glyph + midi follow the new piece).
+  //   add:    { type:"add", bar, beat, piece:"pedalhihat" }
+  //            add a note to that beat's chord (e.g. the hi-hat foot ✕ below the staff).
+  //   flam:   { type:"flam", bar, beat, from:"acousticsnare" }
+  //            mark the matched note as a flam (a small grace notehead before the hit).
+  // Any op may also carry accent (0/1/2) and ghost (true/false).
   // bar  = the printed measure number (measure.index).
   // beat = 1-based beat within the bar (1, 1.5, 2.5, …), in the bar's own beat unit.
-  // from = the lily piece to match within that beat; to = the lily piece to set.
 
-  // Canonical lily → General-MIDI drum note, so a `change` also fixes playback/MIDI.
+  // Canonical lily → General-MIDI drum note, so a `change`/`add` also sets playback/MIDI.
   const LILY_MIDI = {
     bassdrum: 35, acousticbassdrum: 35, sidestick: 37, acousticsnare: 38, handclap: 39,
     electricsnare: 40, lowfloortom: 41, closedhihat: 42, highfloortom: 43, pedalhihat: 44,
@@ -405,6 +408,7 @@
     crashcymbal: 49, crashcymbala: 49, crashcymbalb: 57, ridecymbal: 51, ridecymbala: 51,
     chinesecymbal: 52, ridebell: 53, splashcymbal: 55, cowbell: 56, tommh: 48, hightomtom: 50,
   };
+  const FEET = new Set(['bassdrum', 'acousticbassdrum', 'pedalhihat']);   // voice 2 (feet)
 
   // Beat (1-based, in the bar's beat unit) of an event within its measure.
   function beatOf(measure, event) {
@@ -413,21 +417,43 @@
     return offsetWhole * measure.time_sig[1] + 1;     // → beats in this bar's unit
   }
 
+  // A fresh note object matching the imported score's note shape.
+  function makeNote(piece, op) {
+    return {
+      midi: op.midi != null ? op.midi : (LILY_MIDI[piece] != null ? LILY_MIDI[piece] : null),
+      lily: piece,
+      voice: FEET.has(piece) ? 2 : 1,   // for data fidelity; the renderer is single-voice
+      ghost: op.ghost != null ? op.ghost : false,
+      accent: op.accent != null ? op.accent : 0,
+      tie: false,
+    };
+  }
+
   // Mutate `score` in place by the overlay's ops. Unmatched ops warn (re-import safety:
-  // if Songsterr's tab shifts and an anchor note is gone, you find out instead of it
-  // silently doing nothing). Returns { applied, missed }.
+  // if Songsterr's tab shifts and an anchor is gone, you find out instead of it silently
+  // doing nothing). Returns { applied, missed }.
   function applyOverrides(score, ov) {
     if (!score || !ov || !Array.isArray(ov.ops)) return { applied: 0, missed: 0 };
     let applied = 0, missed = 0;
     for (const op of ov.ops) {
       const m = (score.measures || []).find(mm => mm.index === op.bar);
       if (!m) { console.warn('[overrides] no bar', op.bar); missed++; continue; }
+      const evs = (m.events || []).filter(ev => Math.abs(beatOf(m, ev) - op.beat) <= 1e-4);
+      if (!evs.length) { console.warn('[overrides] no event at', op.bar + ':' + op.beat); missed++; continue; }
       let hit = false;
-      for (const ev of m.events || []) {
-        if (Math.abs(beatOf(m, ev) - op.beat) > 1e-4) continue;
-        for (const n of ev.notes || []) {
+      if (op.type === 'add') {
+        const piece = op.piece || op.to;
+        for (const ev of evs) {
+          ev.notes = ev.notes || [];
+          if (ev.notes.some(n => n.lily === piece)) { hit = true; continue; }   // already there
+          ev.notes.push(makeNote(piece, op));
+          hit = true; applied++;
+        }
+      } else {
+        for (const ev of evs) for (const n of ev.notes || []) {
           if (op.from && n.lily !== op.from) continue;
-          if (op.type === 'change' || op.to) {
+          if (op.type === 'flam') { n.flam = true; }
+          else if (op.type === 'change' || op.to) {
             n.lily = op.to;
             if (op.midi != null) n.midi = op.midi;
             else if (LILY_MIDI[op.to] != null) n.midi = LILY_MIDI[op.to];

@@ -1,0 +1,12 @@
+{
+  "song_id": 16093,
+  "part_id": 3,
+  "title": "Wave Of Mutilation — Pixies",
+  "note": "Hand-authored edits applied on top of the imported score at load. Survives re-import. See applyOverrides in player_common.js.",
+  "ops": [
+    { "type": "change", "bar": 5, "beat": 2.5, "from": "closedhihat", "to": "openhihat", "comment": "4th closed hat in the bar -> open hat" },
+    { "type": "flam",   "bar": 5, "beat": 3,   "from": "acousticsnare", "comment": "snare on beat 3 is a flam" },
+    { "type": "flam",   "bar": 5, "beat": 4,   "from": "acousticsnare", "comment": "snare on beat 4 is a flam" },
+    { "type": "add",    "bar": 5, "beat": 3,   "piece": "pedalhihat",   "comment": "hi-hat foot pedal on the first flam" }
+  ]
+}

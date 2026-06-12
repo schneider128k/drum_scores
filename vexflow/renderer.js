@@ -388,6 +388,22 @@ function buildMeasureTickables(measure) {
       n.__accent = maxAccent;
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
+
+      // Flam: a small grace notehead just before the main hit, on the flammed
+      // note's own staff line (the drum flam — one grace note, no slash/slur).
+      // Set by the overlay engine's `flam` op (dn.flam). Stem up so the tiny note
+      // reads as an ornament distinct from the stems-down main voice.
+      const flamKeys = chord.filter(c => c.dn.flam).map(c => c.key);
+      if (flamKeys.length) {
+        try {
+          const graces = flamKeys.map(k => {
+            const g = new VF.GraceNote({ keys: [k], duration: '8', slash: false, stem_direction: 1 });
+            if (g.render_options) g.render_options.glyph_font_scale = GLYPH_SCALE * 0.66;
+            return g;
+          });
+          n.addModifier(new VF.GraceNoteGroup(graces, false), 0);   // false = no slur
+        } catch (e) { console.warn('flam attach failed m', measure.index, e); }
+      }
     }
     // Notehead glyph size (screen default 39; print 45 so the thin ✕ closed-hi-hat
     // reads). Set before formatting so the spacing accounts for the larger heads.
