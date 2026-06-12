@@ -1,0 +1,17 @@
+{
+  "song_id": 412647,
+  "part_id": 8,
+  "title": "Square Hammer — Ghost",
+  "note": "Hand-authored edits applied on top of the imported score at load. Survives re-import. See applyOverrides in player_common.js.",
+  "ops": [
+    { "_comment": "Drop the snare on beat 1 (leaving crash+kick) in the four-open-hi-hat bars. Beat-1 chord was crash+snare+kick in each." },
+    { "type": "remove", "bar": 10, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 12, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 14, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 16, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 18, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 26, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 52, "beat": 1, "piece": "acousticsnare" },
+    { "type": "remove", "bar": 60, "beat": 1, "piece": "acousticsnare" }
+  ]
+}

@@ -394,6 +394,9 @@
   //            replace a piece (its staff line + glyph + midi follow the new piece).
   //   add:    { type:"add", bar, beat, piece:"pedalhihat" }
   //            add a note to that beat's chord (e.g. the hi-hat foot ✕ below the staff).
+  //   remove: { type:"remove", bar, beat, piece:"acousticsnare" }
+  //            drop a piece from that beat's chord (inverse of add). If it empties
+  //            the chord, the event is removed so the gap reads as a rest.
   //   flam:   { type:"flam", bar, beat, from:"acousticsnare" }
   //            mark the matched note as a flam (a small grace notehead before the hit).
   //   set:    { type:"set", bar, beat, pieces:["acousticsnare","highfloortom"] }
@@ -489,6 +492,22 @@
           hit = true; applied++;
         }
         if (!hit) console.warn('[overrides] add already present', JSON.stringify(op));
+        continue;
+      }
+
+      // `remove` drops a named piece from a beat's chord (the inverse of `add`). If
+      // that empties the chord, the event itself is dropped so the gap reads as a rest.
+      if (op.type === 'remove') {
+        const piece = op.piece || op.from;
+        if (!evs.length) { console.warn('[overrides] no event at', op.bar + ':' + op.beat); missed++; continue; }
+        let hit = false;
+        for (const ev of evs) {
+          const before = (ev.notes || []).length;
+          ev.notes = (ev.notes || []).filter(n => n.lily !== piece);
+          if (ev.notes.length !== before) { hit = true; applied++; }
+          if (!ev.notes.length) m.events = m.events.filter(e => e !== ev);
+        }
+        if (!hit) { console.warn('[overrides] remove: piece not present', JSON.stringify(op)); missed++; }
         continue;
       }
 
