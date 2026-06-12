@@ -23,6 +23,9 @@
     // Print-only "song map" overview page. OFF by default — opt in per device.
     roadmapOn() { return get('roadmap', '0') === '1'; },
     setRoadmap(b) { set('roadmap', b ? '1' : '0'); },
+    // Print paper size. US Letter is the default; A4 for metric printers.
+    paper() { const v = get('paper', 'letter'); return v === 'a4' ? 'a4' : 'letter'; },
+    setPaper(v) { set('paper', v === 'a4' ? 'a4' : 'letter'); },
     noteSize() { return Math.max(0.6, Math.min(2.2, parseFloat(get('noteSize', '1')) || 1)); },
     setNoteSize(v) { set('noteSize', Math.max(0.6, Math.min(2.2, v))); },
   };
@@ -275,11 +278,15 @@
          <div class="pui-row"><span class="grow"><span class="pui-label" style="text-transform:none;color:#1a1a1a;font-size:14px;font-weight:400">Song map page</span></span>
            <label class="pui-toggle"><input type="checkbox" id="pui-roadmap"><span class="pui-track"></span><span class="pui-knob"></span></label>
          </div>
+         <div class="pui-seg"><button data-paper="letter">Letter</button><button data-paper="a4">A4</button></div>
          <div class="pui-print"><button class="pui-btn primary" data-o="portrait">Portrait</button><button class="pui-btn" data-o="landscape">Landscape</button></div>`;
       panel.appendChild(sec);
       const rmCb = sec.querySelector('#pui-roadmap');
       rmCb.checked = API.roadmapOn();
       rmCb.addEventListener('change', () => API.setRoadmap(rmCb.checked));
+      const paintPaper = () => sec.querySelectorAll('[data-paper]').forEach(b => b.classList.toggle('on', b.dataset.paper === API.paper()));
+      sec.querySelectorAll('[data-paper]').forEach(b => b.addEventListener('click', () => { API.setPaper(b.dataset.paper); paintPaper(); }));
+      paintPaper();
       sec.querySelectorAll('.pui-print button').forEach(b => b.addEventListener('click', () => { panel.hidden = true; if (on.print) on.print(b.dataset.o); }));
     }
 

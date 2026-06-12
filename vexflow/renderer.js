@@ -1862,11 +1862,15 @@ function setPageStyle(orientation) {
   const s = SCORE_REF;
   const label = s ? `${s.artist} — ${s.title}   ·   ` : '';
   const foot = cssQuote(label) + ' "page " counter(page) " / " counter(pages)';
-  // Tight L/R margins (0.18in) so the 4 bars stretch nearly edge-to-edge — uses the
-  // width Pawel saw going to waste. Most printers' hardware margin is ≤0.17in, so this
-  // is about as wide as is safe; bottom stays roomy for the footer band.
+  // Paper size: US Letter is the default; A4 for metric printers (gear → Print).
+  const paper = (window.PlayerUI && PlayerUI.paper && PlayerUI.paper() === 'a4') ? 'A4' : 'letter';
+  // Margins as tight as is physically printable so the 4 bars stretch edge-to-edge and
+  // more rows pack per page — Pawel wants every bit of the sheet used. Most consumer
+  // printers can't image the outer ~0.1in (hardware clip), so 0.1in L/R is about the
+  // safe floor; top is just a hairline. The bottom keeps a slim band (0.3in) for the
+  // running footer (Artist — Title · page N / total) that lets a shuffled stack reorder.
   el.textContent =
-    '@page { size: letter ' + orientation + '; margin: 0.3in 0.18in 0.55in 0.18in;' +
+    '@page { size: ' + paper + ' ' + orientation + '; margin: 0.1in 0.1in 0.3in 0.1in;' +
     ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000; } }';
 }
 
@@ -1928,6 +1932,10 @@ function boot() {
   // print-with-map can be shared/bookmarked; otherwise the gear-panel toggle decides.
   const mapParam = new URLSearchParams(location.search).get('map');
   if ((mapParam === '1' || mapParam === '0') && window.PlayerUI) PlayerUI.setRoadmap(mapParam === '1');
+  // ?paper=letter|a4 deep-links (and overrides) the print paper size; otherwise the
+  // gear-panel picker decides. Lets a print be shared/bookmarked and aids headless verify.
+  const paperParam = (new URLSearchParams(location.search).get('paper') || '').toLowerCase();
+  if ((paperParam === 'letter' || paperParam === 'a4') && window.PlayerUI) PlayerUI.setPaper(paperParam);
   const st = document.getElementById('status');
   // The status line shows the song before play and the live bar/section readout
   // once the cursor is running (updateStatus overwrites it).
