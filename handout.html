@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drum Scores — free practice tool</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1a1a1a; line-height: 1.5; padding: 26px 30px; max-width: 760px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 27px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .tag { color: #555; font-size: 14px; margin: 0 0 18px; }
+  .cols { display: flex; gap: 24px; align-items: flex-start; }
+  .main { flex: 1; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: #b8770f; margin: 18px 0 7px; }
+  ul { margin: 0; padding-left: 18px; }
+  li { margin: 4px 0; font-size: 14px; }
+  .qrbox { width: 188px; text-align: center; flex: 0 0 auto; }
+  .qrbox svg { width: 158px; height: 158px; border: 1px solid #e3e3e3; border-radius: 8px; padding: 8px; }
+  .url { font-size: 13px; font-weight: 700; margin-top: 8px; }
+  .url .small { font-weight: 400; color: #666; display:block; font-size: 11px; margin-top: 3px; white-space: nowrap; }
+  .ask { background: #fafafa; border: 1px solid #ececec; border-radius: 10px; padding: 13px 16px; margin-top: 18px; }
+  .ask p { margin: 0 0 6px; font-size: 14px; }
+  .sign { margin-top: 16px; font-size: 13px; color: #444; }
+  .sign b { color: #1a1a1a; }
+  .foot { margin-top: 14px; font-size: 11.5px; color: #888; }
+</style>
+</head>
+<body>
+  <h1>🥁 Drum Scores</h1>
+  <p class="tag">A free play-along practice tool — engraved drum notation that follows the song's audio.</p>
+
+  <div class="cols">
+    <div class="main">
+      <h2>What it does</h2>
+      <ul>
+        <li><b>Play along</b> to the real recording with a cursor that moves across the notes as the song plays.</li>
+        <li><b>Slow any part down</b> — drill it slow, then bring it back up to speed.</li>
+        <li><b>Loop a tricky section</b> with a count-in and repeat it until it's solid.</li>
+        <li><b>Lyrics under the staff</b> to help you keep your place in the song.</li>
+        <li><b>A drum key on every score</b> explaining what each symbol means.</li>
+        <li><b>Print</b> any score for the music stand. No ads, no sign-up, free.</li>
+      </ul>
+    </div>
+    <div class="qrbox">
+      <svg xmlns="http://www.w3.org/2000/svg" width="164" height="164" class="segno"><path transform="scale(4)" class="qrline" stroke="#111" d="M4 4.5h7m5 0h1m4 0h2m1 0h1m1 0h1m3 0h7m-33 1h1m5 0h1m1 0h2m2 0h1m5 0h2m1 0h2m3 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m2 0h1m1 0h1m2 0h2m2 0h1m2 0h1m4 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h2m1 0h4m1 0h1m1 0h4m4 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h1m1 0h2m2 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m2 0h2m1 0h2m6 0h1m1 0h2m2 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-25 1h2m1 0h1m1 0h2m1 0h1m1 0h1m3 0h1m-22 1h1m1 0h4m1 0h1m2 0h1m3 0h3m5 0h4m1 0h2m1 0h1m-30 1h2m3 0h5m1 0h7m2 0h2m4 0h3m-31 1h4m1 0h3m2 0h2m3 0h1m4 0h1m2 0h3m2 0h5m-33 1h1m2 0h1m6 0h1m1 0h2m1 0h2m1 0h1m6 0h3m2 0h1m-31 1h1m3 0h1m1 0h1m1 0h1m2 0h3m3 0h1m2 0h1m3 0h4m4 0h1m-33 1h3m2 0h1m1 0h1m2 0h2m1 0h3m1 0h2m1 0h1m2 0h1m1 0h1m1 0h1m-28 1h1m2 0h1m2 0h1m1 0h1m1 0h1m2 0h3m3 0h3m4 0h1m1 0h1m1 0h1m-31 1h2m1 0h3m1 0h1m1 0h3m4 0h5m1 0h1m2 0h1m3 0h2m1 0h1m-31 1h2m1 0h4m2 0h2m2 0h3m4 0h7m-27 1h2m1 0h1m2 0h1m3 0h4m1 0h3m2 0h1m2 0h2m1 0h1m1 0h3m-32 1h2m1 0h1m1 0h1m5 0h2m1 0h1m1 0h1m1 0h2m1 0h3m2 0h1m1 0h2m1 0h1m-33 1h1m1 0h1m4 0h3m1 0h2m3 0h2m2 0h1m1 0h1m1 0h1m3 0h3m1 0h1m-32 1h1m1 0h2m1 0h2m1 0h3m2 0h2m2 0h3m2 0h1m3 0h1m1 0h1m1 0h2m-33 1h2m3 0h1m1 0h1m3 0h3m1 0h1m2 0h2m2 0h2m3 0h4m-31 1h1m2 0h1m1 0h3m3 0h1m1 0h2m1 0h1m1 0h1m2 0h4m1 0h3m1 0h3m-33 1h1m1 0h3m6 0h1m1 0h1m1 0h3m2 0h1m3 0h4m2 0h1m-31 1h3m1 0h1m1 0h3m1 0h1m3 0h2m2 0h2m3 0h7m-22 1h1m4 0h1m1 0h2m3 0h3m1 0h1m3 0h1m1 0h2m-32 1h7m3 0h2m2 0h2m3 0h2m2 0h2m1 0h1m1 0h1m1 0h1m-31 1h1m5 0h1m1 0h1m2 0h1m2 0h1m1 0h3m1 0h1m2 0h2m3 0h4m-32 1h1m1 0h3m1 0h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m2 0h2m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h2m4 0h1m1 0h1m1 0h2m1 0h1m-33 1h1m1 0h3m1 0h1m2 0h3m4 0h5m1 0h4m1 0h3m1 0h2m-33 1h1m5 0h1m1 0h1m1 0h2m5 0h1m2 0h1m2 0h1m2 0h3m1 0h3m-33 1h7m3 0h2m3 0h2m1 0h3m1 0h4m1 0h2"/></svg>
+
+      <div class="url">Try it free<span class="small">schneider128k.github.io/drum_scores</span></div>
+    </div>
+  </div>
+
+  <div class="ask">
+    <p><b>Could you help shape it?</b> I'd love to add the songs your students actually want to play.</p>
+    <p>&bull; Which songs do you assign most often?</p>
+    <p>&bull; What skill are students working on — and a song you use to teach it?</p>
+    <p style="margin-top:8px;color:#555;">Tell me a few and I'll add them.</p>
+  </div>
+
+  <p class="sign">I'm learning the drums and built this for my own practice — being able to slow parts down and print the scores to follow along has helped me. I thought students here might find it useful too.<br>
+  — <b>Pawel</b> &nbsp;&middot;&nbsp; wocjanpawel@gmail.com</p>
+
+  <p class="foot">Works in any browser, best on an iPad or laptop. Built with free, open tools.</p>
+</body>
+</html>
