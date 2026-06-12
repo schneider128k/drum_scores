@@ -396,6 +396,9 @@
   //            add a note to that beat's chord (e.g. the hi-hat foot ✕ below the staff).
   //   flam:   { type:"flam", bar, beat, from:"acousticsnare" }
   //            mark the matched note as a flam (a small grace notehead before the hit).
+  //   set:    { type:"set", bar, beat, pieces:["acousticsnare","highfloortom"] }
+  //            replace that beat's whole chord with `pieces` (creates the event if
+  //            none exists). The primitive for rewriting a run of notes, e.g. a fill.
   // Any op may also carry accent (0/1/2) and ghost (true/false).
   // bar  = the printed measure number (measure.index).
   // beat = 1-based beat within the bar (1, 1.5, 2.5, …), in the bar's own beat unit.
@@ -417,6 +420,16 @@
     return offsetWhole * measure.time_sig[1] + 1;     // → beats in this bar's unit
   }
 
+  // Exact small fraction [num, den] for a float (handles binary + triplet grids).
+  const _GCD = (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) { [a, b] = [b, a % b]; } return a || 1; };
+  function _frac(x) {
+    for (const d of [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192]) {
+      const n = Math.round(x * d);
+      if (Math.abs(x * d - n) < 1e-6) { const g = _GCD(n, d); return [n / g, d / g]; }
+    }
+    return [Math.round(x * 192), 192];
+  }
+
   // A fresh note object matching the imported score's note shape.
   function makeNote(piece, op) {
     return {
@@ -429,6 +442,29 @@
     };
   }
 
+  // Build a note list from `pieces` (strings, or {piece,accent?,ghost?} objects).
+  function makeNoteList(pieces, op) {
+    return (pieces || []).map(p => typeof p === 'string' ? makeNote(p, {}) : makeNote(p.piece, p));
+  }
+
+  // A fresh event holding `notes` at `beat`, for `add`/`set` ops that land where no
+  // event exists yet (e.g. inserting the "e of 1" 16th). Its rendered duration is
+  // derived from the gap to the next event by the renderer's stretch model, so
+  // `duration` here is only nominal. tuplet_group:null keeps it in the plain-note path.
+  function makeEventAt(measure, beat, notes, op) {
+    const off = (beat - 1) / measure.time_sig[1];     // whole notes from bar start
+    const [on, od] = _frac(off);
+    const [mn, md] = measure.position;
+    const g = _GCD(mn * od + on * md, md * od);
+    return {
+      position: [(mn * od + on * md) / g, (md * od) / g],
+      duration: Array.isArray(op.dur) ? op.dur : [1, 16],
+      notes,
+      grace: false, tuplet_group: null, tuplet_n: null, tuplet_m: null, dots: 0, text: null,
+    };
+  }
+  const makeEvent = (measure, beat, piece, op) => makeEventAt(measure, beat, [makeNote(piece, op)], op);
+
   // Mutate `score` in place by the overlay's ops. Unmatched ops warn (re-import safety:
   // if Songsterr's tab shifts and an anchor is gone, you find out instead of it silently
   // doing nothing). Returns { applied, missed }.
@@ -439,29 +475,46 @@
       const m = (score.measures || []).find(mm => mm.index === op.bar);
       if (!m) { console.warn('[overrides] no bar', op.bar); missed++; continue; }
       const evs = (m.events || []).filter(ev => Math.abs(beatOf(m, ev) - op.beat) <= 1e-4);
-      if (!evs.length) { console.warn('[overrides] no event at', op.bar + ':' + op.beat); missed++; continue; }
-      let hit = false;
+
+      // `add` can land where no event exists yet — then it CREATES one (insert a hit
+      // at a new beat). All other ops need an existing note to act on.
       if (op.type === 'add') {
         const piece = op.piece || op.to;
+        if (!evs.length) { m.events = m.events || []; m.events.push(makeEvent(m, op.beat, piece, op)); applied++; continue; }
+        let hit = false;
         for (const ev of evs) {
           ev.notes = ev.notes || [];
           if (ev.notes.some(n => n.lily === piece)) { hit = true; continue; }   // already there
           ev.notes.push(makeNote(piece, op));
           hit = true; applied++;
         }
-      } else {
-        for (const ev of evs) for (const n of ev.notes || []) {
-          if (op.from && n.lily !== op.from) continue;
-          if (op.type === 'flam') { n.flam = true; }
-          else if (op.type === 'change' || op.to) {
-            n.lily = op.to;
-            if (op.midi != null) n.midi = op.midi;
-            else if (LILY_MIDI[op.to] != null) n.midi = LILY_MIDI[op.to];
-          }
-          if (op.accent != null) n.accent = op.accent;
-          if (op.ghost != null) n.ghost = op.ghost;
-          hit = true; applied++;
+        if (!hit) console.warn('[overrides] add already present', JSON.stringify(op));
+        continue;
+      }
+
+      // `set` replaces a beat's WHOLE chord with the given pieces (creating the event
+      // if none exists). The clean primitive for rewriting a run of notes, e.g. a fill.
+      if (op.type === 'set') {
+        const notes = makeNoteList(op.pieces || (op.piece ? [op.piece] : []), op);
+        if (!evs.length) { m.events = m.events || []; m.events.push(makeEventAt(m, op.beat, notes, op)); applied++; continue; }
+        for (const ev of evs) ev.notes = notes.map(n => ({ ...n }));
+        applied++;
+        continue;
+      }
+
+      if (!evs.length) { console.warn('[overrides] no event at', op.bar + ':' + op.beat); missed++; continue; }
+      let hit = false;
+      for (const ev of evs) for (const n of ev.notes || []) {
+        if (op.from && n.lily !== op.from) continue;
+        if (op.type === 'flam') { n.flam = true; }
+        else if (op.type === 'change' || op.to) {
+          n.lily = op.to;
+          if (op.midi != null) n.midi = op.midi;
+          else if (LILY_MIDI[op.to] != null) n.midi = LILY_MIDI[op.to];
         }
+        if (op.accent != null) n.accent = op.accent;
+        if (op.ghost != null) n.ghost = op.ghost;
+        hit = true; applied++;
       }
       if (!hit) { console.warn('[overrides] no match for', JSON.stringify(op)); missed++; }
     }

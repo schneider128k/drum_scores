@@ -4,9 +4,43 @@
   "title": "Wave Of Mutilation — Pixies",
   "note": "Hand-authored edits applied on top of the imported score at load. Survives re-import. See applyOverrides in player_common.js.",
   "ops": [
-    { "type": "change", "bar": 5, "beat": 2.5, "from": "closedhihat", "to": "openhihat", "comment": "4th closed hat in the bar -> open hat" },
-    { "type": "flam",   "bar": 5, "beat": 3,   "from": "acousticsnare", "comment": "snare on beat 3 is a flam" },
-    { "type": "flam",   "bar": 5, "beat": 4,   "from": "acousticsnare", "comment": "snare on beat 4 is a flam" },
-    { "type": "add",    "bar": 5, "beat": 3,   "piece": "pedalhihat",   "comment": "hi-hat foot pedal on the first flam" }
+    { "type": "change", "bar": 5,  "beat": 2.5,  "from": "closedhihat", "to": "openhihat", "comment": "4th closed hat in the bar -> open hat" },
+    { "type": "flam",   "bar": 5,  "beat": 3,    "from": "acousticsnare", "comment": "snare on beat 3 is a flam" },
+    { "type": "flam",   "bar": 5,  "beat": 4,    "from": "acousticsnare", "comment": "snare on beat 4 is a flam" },
+    { "type": "add",    "bar": 5,  "beat": 3,    "piece": "pedalhihat",   "comment": "hi-hat foot pedal on the first flam" },
+
+    { "type": "add",    "bar": 9,  "beat": 1.25, "piece": "highfloortom", "comment": "floor tom on the 'e' of 1, matching m8's first beat" },
+
+    { "type": "add",    "bar": 18, "beat": 1,    "piece": "pedalhihat",   "comment": "close the hi-hat (foot) on beat 1" },
+
+    { "type": "change", "bar": 39, "beat": 4.5,  "from": "closedhihat", "to": "openhihat", "comment": "final hi-hat of the bar -> open" },
+    { "type": "add",    "bar": 40, "beat": 1,    "piece": "pedalhihat",   "comment": "close the hi-hat (foot) on the downbeat of m40" },
+
+    { "_comment": "m46 b3 -> m47: fast 16th fill. Cell = fat-flam(snare+floor tom), kick, floor tom, snare, floor tom, kick; repeated; last 3 cut to kick/snare/snare." },
+    { "type": "set", "bar": 46, "beat": 3,    "pieces": ["acousticsnare", "highfloortom"], "comment": "fat flam" },
+    { "type": "set", "bar": 46, "beat": 3.25, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 46, "beat": 3.5,  "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 46, "beat": 3.75, "pieces": ["acousticsnare"] },
+    { "type": "set", "bar": 46, "beat": 4,    "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 46, "beat": 4.25, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 46, "beat": 4.5,  "pieces": ["acousticsnare", "highfloortom"], "comment": "fat flam" },
+    { "type": "set", "bar": 46, "beat": 4.75, "pieces": ["bassdrum"] },
+
+    { "type": "set", "bar": 47, "beat": 1,    "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 47, "beat": 1.25, "pieces": ["acousticsnare"] },
+    { "type": "set", "bar": 47, "beat": 1.5,  "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 47, "beat": 1.75, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 47, "beat": 2,    "pieces": ["acousticsnare", "highfloortom"], "comment": "fat flam" },
+    { "type": "set", "bar": 47, "beat": 2.25, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 47, "beat": 2.5,  "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 47, "beat": 2.75, "pieces": ["acousticsnare"] },
+    { "type": "set", "bar": 47, "beat": 3,    "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 47, "beat": 3.25, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 47, "beat": 3.5,  "pieces": ["acousticsnare", "highfloortom"], "comment": "fat flam" },
+    { "type": "set", "bar": 47, "beat": 3.75, "pieces": ["bassdrum"] },
+    { "type": "set", "bar": 47, "beat": 4,    "pieces": ["highfloortom"] },
+    { "type": "set", "bar": 47, "beat": 4.25, "pieces": ["bassdrum"],     "comment": "cut: kick" },
+    { "type": "set", "bar": 47, "beat": 4.5,  "pieces": ["acousticsnare"], "comment": "cut: snare" },
+    { "type": "set", "bar": 47, "beat": 4.75, "pieces": ["acousticsnare"], "comment": "cut: snare" }
   ]
 }
