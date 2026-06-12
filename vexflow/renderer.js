@@ -1174,10 +1174,13 @@ function esc(s) {
 // merged into one labelled entry. Rebuilt with the score on each (re)render.
 function renderDrumKey(score, container) {
   const used = new Set();
+  const flammed = new Set();   // lily pieces that carry a flam ornament anywhere
   for (const m of (score.measures || []))
     for (const e of (m.events || []))
-      for (const n of (e.notes || []))
+      for (const n of (e.notes || [])) {
         if (n.lily && DRUM_MAP[n.lily]) used.add(n.lily);
+        if (n.flam && n.lily && DRUM_MAP[n.lily]) flammed.add(n.lily);
+      }
   if (!used.size) return;
 
   const byKey = new Map();   // mapKey → set of friendly labels
@@ -1189,6 +1192,15 @@ function renderDrumKey(score, container) {
   const entries = [...byKey.entries()]
     .map(([k, labels]) => ({ key: k, label: [...labels].join(' / ') }))
     .sort((a, b) => keyVal(b.key) - keyVal(a.key));   // high on the staff first
+
+  // Flam is an articulation, not a piece, so it has no DRUM_MAP entry — append a
+  // dedicated cell when the song uses one. Draw it on the snare line if the snare
+  // is flammed (the common case), else the first flammed piece, so the grace-note
+  // ornament reads exactly as it does in the score. Trails the pieces.
+  if (flammed.size) {
+    const rep = flammed.has('acousticsnare') ? 'acousticsnare' : [...flammed][0];
+    entries.push({ key: DRUM_MAP[rep].key, label: 'Flam (grace note before the hit)', flam: true });
+  }
 
   const wrap = document.createElement('div');
   wrap.className = 'drumkey';
@@ -1227,6 +1239,12 @@ function renderDrumKey(score, container) {
       stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
       stave.setContext(ctx).draw();
       const note = new VF.StaveNote({ keys: [ent.key], duration: 'q', stem_direction: -1 });
+      if (ent.flam) {
+        // Mirror the score's flam: one small grace notehead, stem up, before the hit.
+        const g = new VF.GraceNote({ keys: [ent.key], duration: '8', slash: false, stem_direction: 1 });
+        if (g.render_options) g.render_options.glyph_font_scale = GLYPH_SCALE * 0.66;
+        note.addModifier(new VF.GraceNoteGroup([g], false), 0);
+      }
       VF.Formatter.FormatAndDraw(ctx, stave, [note]);
     } catch (e) {
       art.textContent = '?';
