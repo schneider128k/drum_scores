@@ -380,9 +380,87 @@
     host.querySelector('#pui-cal-done').onclick = () => close(true);
   }
 
+  // ── Score edit overlay ──────────────────────────────────────────────────────
+  // Edits are NOT baked into the imported score_<id>.js (that file is regenerable
+  // from Songsterr and would wipe corrections on re-import). Instead a tiny, hand-
+  // authored overrides_<id>_<part>.json sits alongside it and is APPLIED ON TOP at
+  // load — both renderers (renderer.js teleprompter + conveyor.js) call applyOverrides
+  // before they draw, so one edit shows up in every view. The file is the committable
+  // source of truth: Pawel edits, exports it, and pushes it; students pull it. No
+  // server, no auth — repo write-access is the access control.
+  //
+  // Op format (overrides_<id>_<part>.json):
+  //   { "song_id": 16093, "part_id": 3, "ops": [
+  //       { "type":"change", "bar":3, "beat":1, "from":"closedhihat", "to":"openhihat" }
+  //   ] }
+  // bar  = the printed measure number (measure.index).
+  // beat = 1-based beat within the bar (1, 1.5, 2.5, …), in the bar's own beat unit.
+  // from = the lily piece to match within that beat; to = the lily piece to set.
+
+  // Canonical lily → General-MIDI drum note, so a `change` also fixes playback/MIDI.
+  const LILY_MIDI = {
+    bassdrum: 35, acousticbassdrum: 35, sidestick: 37, acousticsnare: 38, handclap: 39,
+    electricsnare: 40, lowfloortom: 41, closedhihat: 42, highfloortom: 43, pedalhihat: 44,
+    lowtom: 45, openhihat: 46, halfopenhihat: 46, lowmidtom: 47, himidtom: 48, hightom: 50,
+    crashcymbal: 49, crashcymbala: 49, crashcymbalb: 57, ridecymbal: 51, ridecymbala: 51,
+    chinesecymbal: 52, ridebell: 53, splashcymbal: 55, cowbell: 56, tommh: 48, hightomtom: 50,
+  };
+
+  // Beat (1-based, in the bar's beat unit) of an event within its measure.
+  function beatOf(measure, event) {
+    const [mn, md] = measure.position, [en, ed] = event.position;
+    const offsetWhole = (en / ed) - (mn / md);       // whole notes from the bar's start
+    return offsetWhole * measure.time_sig[1] + 1;     // → beats in this bar's unit
+  }
+
+  // Mutate `score` in place by the overlay's ops. Unmatched ops warn (re-import safety:
+  // if Songsterr's tab shifts and an anchor note is gone, you find out instead of it
+  // silently doing nothing). Returns { applied, missed }.
+  function applyOverrides(score, ov) {
+    if (!score || !ov || !Array.isArray(ov.ops)) return { applied: 0, missed: 0 };
+    let applied = 0, missed = 0;
+    for (const op of ov.ops) {
+      const m = (score.measures || []).find(mm => mm.index === op.bar);
+      if (!m) { console.warn('[overrides] no bar', op.bar); missed++; continue; }
+      let hit = false;
+      for (const ev of m.events || []) {
+        if (Math.abs(beatOf(m, ev) - op.beat) > 1e-4) continue;
+        for (const n of ev.notes || []) {
+          if (op.from && n.lily !== op.from) continue;
+          if (op.type === 'change' || op.to) {
+            n.lily = op.to;
+            if (op.midi != null) n.midi = op.midi;
+            else if (LILY_MIDI[op.to] != null) n.midi = LILY_MIDI[op.to];
+          }
+          if (op.accent != null) n.accent = op.accent;
+          if (op.ghost != null) n.ghost = op.ghost;
+          hit = true; applied++;
+        }
+      }
+      if (!hit) { console.warn('[overrides] no match for', JSON.stringify(op)); missed++; }
+    }
+    if (applied) console.info(`[overrides] applied ${applied} edit(s)` + (missed ? `, ${missed} missed` : ''));
+    return { applied, missed };
+  }
+
+  // Fetch overrides_<id>_<part>.json (if any) and apply it to window.SCORE. A 404 just
+  // means "no edits for this song" — silent. Call (and await) before boot() renders.
+  async function loadAndApplyOverrides() {
+    const s = window.SCORE;
+    if (!s) return;
+    const id = s.song_id + '_' + s.part_id;
+    try {
+      const res = await fetch('overrides_' + id + '.json', { cache: 'no-store' });
+      if (!res.ok) return;                 // 404 / no overlay → nothing to do
+      applyOverrides(s, await res.json());
+    } catch (_) { /* offline / file:// — skip silently */ }
+  }
+
   API.mount = mount;
   API.openCalibrator = openCalibrator;
   API.maybeShowDelayHint = maybeShowDelayHint;
   API.maybeShowSyncHint = maybeShowSyncHint;
+  API.applyOverrides = applyOverrides;
+  API.loadAndApplyOverrides = loadAndApplyOverrides;
   window.PlayerUI = API;
 })();

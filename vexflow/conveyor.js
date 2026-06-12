@@ -789,5 +789,10 @@ function boot() {
   refreshTransport();
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-else boot();
+// Apply the per-song edit overlay (overrides_<id>_<part>.json) before rendering.
+function startWithOverrides() {
+  const p = (window.PlayerUI && PlayerUI.loadAndApplyOverrides) ? PlayerUI.loadAndApplyOverrides() : Promise.resolve();
+  p.then(boot, boot);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startWithOverrides);
+else startWithOverrides();

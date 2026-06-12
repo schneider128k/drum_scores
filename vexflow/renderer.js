@@ -2001,8 +2001,14 @@ function boot() {
   }
 }
 
+// Apply the per-song edit overlay (overrides_<id>_<part>.json) onto window.SCORE
+// before boot() reads/renders it, so edits show in the notation and the drum key.
+function startWithOverrides() {
+  const p = (window.PlayerUI && PlayerUI.loadAndApplyOverrides) ? PlayerUI.loadAndApplyOverrides() : Promise.resolve();
+  p.then(boot, boot);   // never let an overlay error block rendering
+}
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
+  document.addEventListener('DOMContentLoaded', startWithOverrides);
 } else {
-  boot();
+  startWithOverrides();
 }
