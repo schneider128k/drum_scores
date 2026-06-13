@@ -439,13 +439,11 @@ function buildMeasureTickables(measure) {
 
 const ROW_HEIGHT = 215;
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
-// Let-ring ties (drawTies). A cross-bar tie is lifted so its arc clears the next
-// bar's measure number: y_shift raises BOTH endpoints (and with them the whole arc).
-// cp1/cp2 are the outer/inner curve control heights — they must DIFFER or the filled
-// lens collapses to zero width (an invisible tie), so keep the default-style spread.
-const TIE_CROSSBAR_LIFT = 20;
-const TIE_CROSSBAR_CP1 = 8;
-const TIE_CROSSBAR_CP2 = 14;
+// Measure numbers live in the top annotation band — above EVERY notehead, accent and
+// tie — at this fixed rise above the top staff line, the same band as section labels.
+// (VexFlow's built-in number sits at notehead height and collides with a downbeat or
+// "+ of 4" crash, a beat-1 accent, or a cross-bar tie; this lifts it clear for all songs.)
+const MEASURE_NUM_RISE = 42;   // = SECTION_RISE: numbers and section labels share one top line
 // Print packs rows closer vertically: the score content only spans ~[ROW_TOP-14 ..
 // lyric baseline], so for print we shift it up (smaller top inset) and crop the SVG
 // canvas just below the lyric line — cutting the empty headroom that caused the wide
@@ -485,6 +483,7 @@ const SCREEN_PAL = {
   STEM: '#8c8c8c', STEM_W: 1, BEAM: '#8c8c8c', BEAM_W: 4, ACCENT: '#777', SECTION: '#777',
   NOTE_LW: 1, GLYPH: 39,                            // 39 = VexFlow default notehead scale
   SEC_FONT: ['Georgia', 13, 'normal', 'italic'],   // grey italic, understated on screen
+  NUM_FONT: ['Georgia', 11, 'normal'],             // measure numbers: upright, a touch smaller
   LYR_FONT: ['Arial', 9, 'normal'], LYR_COLOR: '#7a7a7a',
 };
 const PRINT_PAL = {
@@ -492,18 +491,19 @@ const PRINT_PAL = {
   STEM: '#141414', STEM_W: 3, BEAM: '#141414', BEAM_W: 5, ACCENT: '#000', SECTION: '#000',
   NOTE_LW: 1.5, GLYPH: 45,                          // larger noteheads so the thin ✕ (closed hi-hat) reads;
   SEC_FONT: ['Georgia', 17, 'bold'],               // spacing recomputes from the bigger heads, so no collisions
+  NUM_FONT: ['Georgia', 13, 'normal'],             // measure numbers: heavier on paper, lighter than a section label
   LYR_FONT: ['Arial', 11, 'bold'], LYR_COLOR: '#000',
 };
 let NOTE_COLOR, GHOST_COLOR, STAVE_COLOR, STAVE_LINE_WIDTH, STEM_COLOR, STEM_WIDTH,
     BEAM_COLOR, BEAM_WIDTH, ACCENT_COLOR, SECTION_COLOR, NOTE_LINE_WIDTH, GLYPH_SCALE,
-    SECTION_FONT, LYRIC_FONT, LYRIC_COLOR, IS_PRINT;
+    SECTION_FONT, NUM_FONT, LYRIC_FONT, LYRIC_COLOR, IS_PRINT;
 function applyPalette(print) {
   const p = print ? PRINT_PAL : SCREEN_PAL;
   NOTE_COLOR = p.NOTE; GHOST_COLOR = p.GHOST; STAVE_COLOR = p.STAVE;
   STAVE_LINE_WIDTH = p.STAVE_LW; STEM_COLOR = p.STEM; STEM_WIDTH = p.STEM_W;
   BEAM_COLOR = p.BEAM; BEAM_WIDTH = p.BEAM_W; ACCENT_COLOR = p.ACCENT;
   SECTION_COLOR = p.SECTION; NOTE_LINE_WIDTH = p.NOTE_LW; GLYPH_SCALE = p.GLYPH;
-  SECTION_FONT = p.SEC_FONT; LYRIC_FONT = p.LYR_FONT; LYRIC_COLOR = p.LYR_COLOR;
+  SECTION_FONT = p.SEC_FONT; NUM_FONT = p.NUM_FONT; LYRIC_FONT = p.LYR_FONT; LYRIC_COLOR = p.LYR_COLOR;
   IS_PRINT = !!print;
 }
 applyPalette(false);   // screen palette is the default until a render says otherwise
@@ -614,8 +614,10 @@ function drawRowLyrics(ctx, y, items) {
 
 // Draw let-ring ties across the whole row. A note tagged __tieStartKeys (set by the
 // overlay `tie` op) is joined by an arc to the next note carrying the same staff key,
-// even across a bar line. Stems are down, so the arc bows UP, clear of the beams.
-// Run after every measure in the row is formatted+drawn so both endpoints have Ys.
+// even across a bar line. Stems are down, so the arc bows UP, just above the noteheads
+// (same for in-bar and cross-bar ties — measure numbers sit in the top band, well clear,
+// so a cross-bar tie needs no special lift). Run after every measure in the row is
+// formatted+drawn so both endpoints have Ys.
 function drawTies(ctx, built) {
   // Flat, time-ordered note list for the row, each tagged with its measure index so
   // a cross-bar tie can lift its arc to clear the second bar's measure number.
@@ -642,14 +644,6 @@ function drawTies(ctx, built) {
         first_note: fn, last_note: partner.n, first_indices: [fi], last_indices: [li],
       });
       tie.setDirection(-1);   // bow up, opposite the down stems
-      // A tie that crosses the bar line passes over the next bar's measure number.
-      // Lift the whole arc (endpoints + control points) above the number so the two
-      // never touch — the user's "don't intersect the measure number" requirement.
-      if (partner.mi !== seq[i].mi) {
-        tie.render_options.y_shift = TIE_CROSSBAR_LIFT;
-        tie.render_options.cp1 = TIE_CROSSBAR_CP1;
-        tie.render_options.cp2 = TIE_CROSSBAR_CP2;
-      }
       try { tie.setContext(ctx).draw(); } catch (e) { console.warn('[tie] draw failed', key, e); }
     }
   }
@@ -862,14 +856,31 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
     const stave = new VF.Stave(x, rowTop, myWidth,
       IS_PRINT ? { spacing_between_lines_px: PRINT_LINE_SPACING } : undefined);
-    // Thin grey staff lines / barlines / clef / measure number.
+    // Thin grey staff lines / barlines / clef.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
       stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
-    stave.setMeasure(m.index);
     stave.setContext(ctx).draw();
     baselineY = stave.getYForLine(4) + BEAM_DROP + LYRIC_GAP;
+
+    // Measure number — hand-drawn in the top annotation band (NOT VexFlow's built-in,
+    // which sits at notehead height and collides with a high downbeat/"+ of 4" crash or
+    // a cross-bar tie). Centred on the barline, at the section-label height so it clears
+    // every notehead, accent and tie. General: applies to every bar of every song.
+    let mNumRight;   // right edge of the number, so a same-band section label/time sig clears it
+    {
+      ctx.save();
+      ctx.setFont(...NUM_FONT);
+      ctx.setFillStyle(SECTION_COLOR);
+      const label = '' + m.index;
+      const w = ctx.measureText(label).width;
+      ctx.fillText(label, stave.getX() - w / 2, stave.getYForLine(0) - MEASURE_NUM_RISE);
+      mNumRight = stave.getX() + w / 2;
+      ctx.restore();
+    }
+    // Where same-band text (section label, time sig) may begin: past the measure number.
+    const topBandX = Math.max(stave.getNoteStartX(), mNumRight + 8);
 
     // Capture the row's outer edges for the two end anchors (left edge of the
     // first stave, right edge of the last). rowEndPos/X are overwritten each
@@ -888,13 +899,13 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       rowEndX = stave.getNoteEndX();
     }
 
-    // Section label (Intro / Verse 1 / Chorus …) drawn by hand for colour
-    // control: grey italic, above the accent band, clear of the notes.
+    // Section label (Intro / Verse 1 / Chorus …) drawn by hand for colour control:
+    // grey italic, in the top band, starting past the measure number so they never clash.
     if (m.marker) {
       ctx.save();
       ctx.setFont(...SECTION_FONT);
       ctx.setFillStyle(SECTION_COLOR);
-      ctx.fillText(m.marker, stave.getNoteStartX(), stave.getYForLine(0) - SECTION_RISE);
+      ctx.fillText(m.marker, topBandX, stave.getYForLine(0) - SECTION_RISE);
       ctx.restore();
     }
 
@@ -908,7 +919,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     const prevM = measureByIndex(m.index - 1);
     if (!prevM || prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1]) {
       ctx.save();
-      let mx = stave.getNoteStartX();
+      let mx = topBandX;   // start past the measure number
       const my = stave.getYForLine(0) - SECTION_RISE;
       if (m.marker) { ctx.setFont(...SECTION_FONT); mx += ctx.measureText(m.marker).width + 12; }  // sit after the section label if both
       ctx.setFont('Georgia', 12, 'normal', 'italic');
