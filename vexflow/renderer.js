@@ -448,13 +448,18 @@ const MEASURE_NUM_RISE = 42;   // = SECTION_RISE: numbers and section labels sha
 // lyric baseline], so for print we shift it up (smaller top inset) and crop the SVG
 // canvas just below the lyric line — cutting the empty headroom that caused the wide
 // gaps, without clipping section labels (top) or lyrics/beams (bottom).
-const PRINT_ROW_TOP = 16;
-const PRINT_ROW_HEIGHT = 188;   // taller than screen-crop: print spreads the drum lanes (below)
+const PRINT_ROW_TOP = 16;       // the taller staff already gains label headroom (VexFlow's
+                                // internal top padding scales with line spacing), so no bump.
+const PRINT_ROW_HEIGHT = 188;   // unchanged: the bigger staff fills the slack between rows,
+                                // so rows-per-page (and total pages) stay about the same.
 // Print spreads the five staff lines further apart than the screen's 10px. On paper the
 // vertical POSITION is what distinguishes kick/snare/tom/cymbal (they share an oval head),
 // so wider lanes = faster sight-reading — the honest "a bit larger" lever when 4-bars-fill-
 // width fixes the overall scale. Screen keeps VexFlow's default (undefined → 10px).
-const PRINT_LINE_SPACING = 12;
+const PRINT_LINE_SPACING = 14;   // taller drum lanes — the #1 readability lever on paper
+                                 // (vertical position is what tells the kit pieces apart).
+                                 // Eats the generous inter-row white space, not extra pages;
+                                 // capped so the lyric line still fits the row box (≤ height).
 const PAGE_WIDTH = 1100;     // fallback width when the container hasn't laid out yet
 const MIN_PAGE_WIDTH = 360;  // floor so a tiny window still renders something legible
 const CLEF_W = 70;           // width the clef + time signature eat on the first row
@@ -469,6 +474,8 @@ const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
+const PRINT_LYRIC_GAP = 16;  // print pulls the lyric line up a touch so the taller staff +
+                             // lyrics still fit one row box (keeps the page count steady)
 
 // Two palettes. SCREEN is the Songsterr look: note heads the only dark element,
 // everything else grey, so on a bright display the eye lands on the notes. PRINT
@@ -487,9 +494,9 @@ const SCREEN_PAL = {
   LYR_FONT: ['Arial', 9, 'normal'], LYR_COLOR: '#7a7a7a',
 };
 const PRINT_PAL = {
-  NOTE: '#000', GHOST: '#5a5a5a', STAVE: '#202020', STAVE_LW: 1.6,
-  STEM: '#141414', STEM_W: 3, BEAM: '#141414', BEAM_W: 5, ACCENT: '#000', SECTION: '#000',
-  NOTE_LW: 1.5, GLYPH: 45,                          // larger noteheads so the thin ✕ (closed hi-hat) reads;
+  NOTE: '#000', GHOST: '#5a5a5a', STAVE: '#202020', STAVE_LW: 1.9,
+  STEM: '#141414', STEM_W: 3.4, BEAM: '#141414', BEAM_W: 5.5, ACCENT: '#000', SECTION: '#000',
+  NOTE_LW: 1.7, GLYPH: 48,                          // larger noteheads so the thin ✕ (closed hi-hat) reads;
   SEC_FONT: ['Georgia', 17, 'bold'],               // spacing recomputes from the bigger heads, so no collisions
   NUM_FONT: ['Georgia', 13, 'normal'],             // measure numbers: heavier on paper, lighter than a section label
   LYR_FONT: ['Arial', 11, 'bold'], LYR_COLOR: '#000',
@@ -862,7 +869,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
     stave.setContext(ctx).draw();
-    baselineY = stave.getYForLine(4) + BEAM_DROP + LYRIC_GAP;
+    baselineY = stave.getYForLine(4) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
 
     // Measure number — hand-drawn in the top annotation band (NOT VexFlow's built-in,
     // which sits at notehead height and collides with a high downbeat/"+ of 4" crash or
@@ -893,7 +900,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
         rowStartPos = mStart;
         rowStartX = stave.getNoteStartX();
         rowYTop = stave.getYForLine(0) - ACCENT_RISE - 4;
-        rowYBottom = stave.getYForLine(4) + BEAM_DROP + LYRIC_GAP + 4;
+        rowYBottom = stave.getYForLine(4) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
       }
       rowEndPos = mEnd;
       rowEndX = stave.getNoteEndX();
@@ -1974,11 +1981,15 @@ function setPageStyle(orientation) {
   // Margins as tight as is physically printable so the 4 bars stretch edge-to-edge and
   // more rows pack per page — Pawel wants every bit of the sheet used. Most consumer
   // printers can't image the outer ~0.1in (hardware clip), so 0.1in L/R is about the
-  // safe floor; top is just a hairline. The bottom keeps a slim band (0.3in) for the
-  // running footer (Artist — Title · page N / total) that lets a shuffled stack reorder.
+  // safe floor; top is just a hairline. The bottom needs MORE: a printer's unprintable
+  // bottom band (~0.25–0.4in) was clipping the footer when it sat in a 0.3in margin, so
+  // reserve 0.5in (the conventional safe bottom) and pin the footer to the TOP of that
+  // band (vertical-align) so it sits ~0.5in up — clear of the hardware clip — while the
+  // running footer (Artist — Title · page N / total) still lets a shuffled stack reorder.
   el.textContent =
-    '@page { size: ' + paper + ' ' + orientation + '; margin: 0.1in 0.1in 0.3in 0.1in;' +
-    ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000; } }';
+    '@page { size: ' + paper + ' ' + orientation + '; margin: 0.1in 0.1in 0.5in 0.1in;' +
+    ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000;' +
+    ' vertical-align: top; } }';
 }
 
 function enterPrint(orientation) {
