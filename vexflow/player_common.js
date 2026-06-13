@@ -399,6 +399,10 @@
   //            the chord, the event is removed so the gap reads as a rest.
   //   flam:   { type:"flam", bar, beat, from:"acousticsnare" }
   //            mark the matched note as a flam (a small grace notehead before the hit).
+  //   tie:    { type:"tie", bar, beat, piece:"crashcymbalb" }
+  //            tie the matched note FORWARD into the next event that carries the same
+  //            piece (an arc; the second hit rings on, it is not re-struck). Used for
+  //            a cymbal that's let to ring across the bar line. May cross the bar line.
   //   set:    { type:"set", bar, beat, pieces:["acousticsnare","highfloortom"] }
   //            replace that beat's whole chord with `pieces` (creates the event if
   //            none exists). The primitive for rewriting a run of notes, e.g. a fill.
@@ -475,6 +479,7 @@
     if (!score || !ov || !Array.isArray(ov.ops)) return { applied: 0, missed: 0 };
     let applied = 0, missed = 0;
     for (const op of ov.ops) {
+      if (!op || !op.type) continue;        // skip {_comment:…} annotation entries
       const m = (score.measures || []).find(mm => mm.index === op.bar);
       if (!m) { console.warn('[overrides] no bar', op.bar); missed++; continue; }
       const evs = (m.events || []).filter(ev => Math.abs(beatOf(m, ev) - op.beat) <= 1e-4);
@@ -522,10 +527,12 @@
       }
 
       if (!evs.length) { console.warn('[overrides] no event at', op.bar + ':' + op.beat); missed++; continue; }
+      const want = op.from || op.piece;   // which piece in the chord this op acts on
       let hit = false;
       for (const ev of evs) for (const n of ev.notes || []) {
-        if (op.from && n.lily !== op.from) continue;
+        if (want && n.lily !== want) continue;
         if (op.type === 'flam') { n.flam = true; }
+        else if (op.type === 'tie') { n.tie = true; }
         else if (op.type === 'change' || op.to) {
           n.lily = op.to;
           if (op.midi != null) n.midi = op.midi;

@@ -12,6 +12,18 @@
     { "type": "remove", "bar": 18, "beat": 1, "piece": "acousticsnare" },
     { "type": "remove", "bar": 26, "beat": 1, "piece": "acousticsnare" },
     { "type": "remove", "bar": 52, "beat": 1, "piece": "acousticsnare" },
-    { "type": "remove", "bar": 60, "beat": 1, "piece": "acousticsnare" }
+    { "type": "remove", "bar": 60, "beat": 1, "piece": "acousticsnare" },
+
+    { "_comment": "Let-ring ties (Solo 1). A crash struck WITH a kick rings into the next lone crash, which is not re-struck — tie the two so the second reads as held, not played. The crash glyph is shared key a/5/x2 so crashcymbal and crashcymbalb tie to the same line." },
+    { "_comment": "Pair 1: m84 last 8th (crash+kick) rings into m85 beat 1 (lone crash). Crosses the bar line; arc lifted to clear m85's measure number." },
+    { "type": "tie", "bar": 84, "beat": 4.5, "piece": "crashcymbalb" },
+    { "_comment": "Pair 2: m85 '+ of 2' (crash+kick) rings into m85 beat 3 (lone crash)." },
+    { "type": "tie", "bar": 85, "beat": 2.5, "piece": "crashcymbal" },
+    { "_comment": "Pair 3: same shape as m84 — m100 last 8th (crash+kick) rings into m101 beat 1 (lone crash). Crosses the bar line." },
+    { "type": "tie", "bar": 100, "beat": 4.5, "piece": "crashcymbalb" },
+    { "_comment": "Pair 4: m124 last 8th (crash+kick) rings into m125 beat 1 (lone crash). Crosses the bar line." },
+    { "type": "tie", "bar": 124, "beat": 4.5, "piece": "crashcymbal" },
+    { "_comment": "Pair 5: m126 last 8th (crash+kick) rings into m127 beat 1 (lone crash). Crosses the bar line." },
+    { "type": "tie", "bar": 126, "beat": 4.5, "piece": "crashcymbal" }
   ]
 }

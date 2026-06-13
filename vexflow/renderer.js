@@ -10,9 +10,11 @@
 //  - ghost-note parentheses, dotted durations down to 64ths
 //  - section markers (Intro / Verse / Chorus …) above the stave
 //  - multi-measure rows with content-proportional widths
+//  - let-ring ties (drawTies) between same-pitch notes, incl. across a bar line
 //
 // Intentionally out of scope for now (TODO list):
-//  - grace notes, tremolo rolls, tuplets, ties
+//  - tremolo rolls
+//  - grace notes (except the flam ornament, which IS drawn)
 //  - hairpin crescendos, dynamics, performance-text annotations
 //  - lyrics row
 //  - data-pos cursor metadata
@@ -389,6 +391,13 @@ function buildMeasureTickables(measure) {
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
 
+      // Tie start: a note flagged dn.tie (overlay `tie` op) opens an arc forward to
+      // the next event carrying the same staff key — a let-ring cymbal whose second
+      // hit isn't re-struck. Record the key(s); renderRow draws the StaveTie once the
+      // whole row is laid out (the partner may be in the next bar of the same row).
+      const tieKeys = chord.filter(c => c.dn.tie).map(c => c.key);
+      if (tieKeys.length) n.__tieStartKeys = tieKeys;
+
       // Flam: a small grace notehead just before the main hit, on the flammed
       // note's own staff line (the drum flam — one grace note, no slash/slur).
       // Set by the overlay engine's `flam` op (dn.flam). Stem up so the tiny note
@@ -430,6 +439,13 @@ function buildMeasureTickables(measure) {
 
 const ROW_HEIGHT = 215;
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
+// Let-ring ties (drawTies). A cross-bar tie is lifted so its arc clears the next
+// bar's measure number: y_shift raises BOTH endpoints (and with them the whole arc).
+// cp1/cp2 are the outer/inner curve control heights — they must DIFFER or the filled
+// lens collapses to zero width (an invisible tie), so keep the default-style spread.
+const TIE_CROSSBAR_LIFT = 20;
+const TIE_CROSSBAR_CP1 = 8;
+const TIE_CROSSBAR_CP2 = 14;
 // Print packs rows closer vertically: the score content only spans ~[ROW_TOP-14 ..
 // lyric baseline], so for print we shift it up (smaller top inset) and crop the SVG
 // canvas just below the lyric line — cutting the empty headroom that caused the wide
@@ -591,6 +607,50 @@ function drawRowLyrics(ctx, y, items) {
       const leftEdge = next.x - ctx.measureText(next.text).width / 2;
       const hx = (rightEdge + leftEdge) / 2;
       ctx.fillText('-', hx - halfDash, y);
+    }
+  }
+  ctx.restore();
+}
+
+// Draw let-ring ties across the whole row. A note tagged __tieStartKeys (set by the
+// overlay `tie` op) is joined by an arc to the next note carrying the same staff key,
+// even across a bar line. Stems are down, so the arc bows UP, clear of the beams.
+// Run after every measure in the row is formatted+drawn so both endpoints have Ys.
+function drawTies(ctx, built) {
+  // Flat, time-ordered note list for the row, each tagged with its measure index so
+  // a cross-bar tie can lift its arc to clear the second bar's measure number.
+  const seq = [];
+  for (const b of built) for (const n of b.notes) seq.push({ n, mi: b.m.index });
+  ctx.save();
+  ctx.setFillStyle(NOTE_COLOR);
+  ctx.setStrokeStyle(NOTE_COLOR);
+  for (let i = 0; i < seq.length; i++) {
+    const fn = seq[i].n;
+    if (!fn.__tieStartKeys) continue;
+    for (const key of fn.__tieStartKeys) {
+      const fi = fn.getKeys().indexOf(key);
+      if (fi < 0) continue;
+      let partner = null, li = -1;
+      for (let j = i + 1; j < seq.length; j++) {
+        const c = seq[j].n;
+        if (c.isRest && c.isRest()) continue;
+        const k = c.getKeys().indexOf(key);
+        if (k >= 0) { partner = seq[j]; li = k; break; }
+      }
+      if (!partner) { console.warn('[tie] no forward partner for', key, 'm' + seq[i].mi); continue; }
+      const tie = new VF.StaveTie({
+        first_note: fn, last_note: partner.n, first_indices: [fi], last_indices: [li],
+      });
+      tie.setDirection(-1);   // bow up, opposite the down stems
+      // A tie that crosses the bar line passes over the next bar's measure number.
+      // Lift the whole arc (endpoints + control points) above the number so the two
+      // never touch — the user's "don't intersect the measure number" requirement.
+      if (partner.mi !== seq[i].mi) {
+        tie.render_options.y_shift = TIE_CROSSBAR_LIFT;
+        tie.render_options.cp1 = TIE_CROSSBAR_CP1;
+        tie.render_options.cp2 = TIE_CROSSBAR_CP2;
+      }
+      try { tie.setContext(ctx).draw(); } catch (e) { console.warn('[tie] draw failed', key, e); }
     }
   }
   ctx.restore();
@@ -962,6 +1022,8 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       rowLyrics.push({ x: (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2, text: n.__lyric, cont: n.__cont });
     }
   }
+
+  drawTies(ctx, built);
 
   drawRowLyrics(ctx, baselineY, rowLyrics);
 
