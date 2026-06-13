@@ -128,6 +128,15 @@ window.SONGS = [
     "lyrics": false
   },
   {
+    "id": "4831516_3",
+    "song_id": 4831516,
+    "part_id": 3,
+    "instrument": "drums",
+    "artist": "Ghost",
+    "title": "Hunter's Moon",
+    "lyrics": false
+  },
+  {
     "id": "441770_9",
     "song_id": 441770,
     "part_id": 9,
@@ -162,15 +171,6 @@ window.SONGS = [
     "artist": "Guns N' Roses",
     "title": "Sweet Child O' Mine",
     "lyrics": true
-  },
-  {
-    "id": "4831516_3",
-    "song_id": 4831516,
-    "part_id": 3,
-    "instrument": "drums",
-    "artist": "Hunters Moon",
-    "title": "Ghost",
-    "lyrics": false
   },
   {
     "id": "11053_9",
