@@ -110,6 +110,15 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "500775_9",
+    "song_id": 500775,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "Ghost",
+    "title": "Call Me Little Sunshine",
+    "lyrics": false
+  },
+  {
     "id": "442661_8",
     "song_id": 442661,
     "part_id": 8,
@@ -153,6 +162,15 @@ window.SONGS = [
     "artist": "Guns N' Roses",
     "title": "Sweet Child O' Mine",
     "lyrics": true
+  },
+  {
+    "id": "4831516_3",
+    "song_id": 4831516,
+    "part_id": 3,
+    "instrument": "drums",
+    "artist": "Hunters Moon",
+    "title": "Ghost",
+    "lyrics": false
   },
   {
     "id": "11053_9",
