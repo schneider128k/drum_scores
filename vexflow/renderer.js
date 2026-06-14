@@ -51,6 +51,16 @@ let RATE_IDX = RATES.length - 1;      // start at 100%
 let PLAYBACK_RATE = 1;        // scales the between-sample cursor advance (0.5× audio ⇒ half real-time)
 let MEASURE_TIMELINE = [];    // [{sec, idx, marker}] per measure downbeat — drives the status line
 let SCORE_REF = null;         // kept so a resize can re-render responsively
+// Engraving mode, set per render from score.instrument. 'drums' = the original
+// percussion path (DrumNote events, 5-line stave, custom noteheads). Anything
+// else ('guitar'/'bass') = the TAB path: a TabStave of TUNING.length lines with
+// fret numbers, reusing the same row-packing / proportional-spacing / cursor /
+// sync / lyrics scaffold. IS_TAB gates every tab-only branch so the drum path
+// runs byte-for-byte as before.
+let INSTRUMENT = 'drums';
+let IS_TAB = false;
+let TUNING = null;            // MIDI numbers high→low (tab only)
+let NUM_LINES = 5;            // tab stave line count = TUNING.length
 // Cursor clock estimator: a type-2 (PI) tracking loop that fuses the quantised,
 // ~250 ms-stale YouTube getCurrentTime() sensor into a smooth, monotonic media
 // clock. State = phase (estimated score-seconds) + rate (score-sec per
@@ -437,6 +447,123 @@ function buildMeasureTickables(measure) {
   return { tickables, tuplets };
 }
 
+// GuitarNotes → VexFlow TabNote positions. Our `string` is 0-based with 0 =
+// highest-pitched string (top tab line); VexFlow's `str` is 1-based from the
+// top, so str = string + 1. A dead/muted note prints an × instead of a fret.
+// De-duplicated per string (a chord can't sound two frets on one string).
+function tabPositions(notes) {
+  const seen = new Set();
+  const out = [];
+  for (const gn of notes) {
+    const str = (gn.string | 0) + 1;
+    if (seen.has(str)) continue;
+    seen.add(str);
+    out.push({ str, fret: gn.dead ? 'X' : gn.fret, __gn: gn });
+  }
+  out.sort((a, b) => a.str - b.str);
+  return out;
+}
+
+// Build VexFlow TabNotes for one measure. Unlike drums (instantaneous hits that
+// stretch to the next event), a guitar/bass note's NOTATED duration is musically
+// real, so we render each event at its own duration and fill the remaining time
+// with (invisible) rests — the proportional spacer + moving cursor convey the
+// rhythm. Rests are VF.GhostNote: they occupy the right tick width (so spacing and
+// the per-barline cursor anchors stay correct) but draw nothing, keeping the tab
+// clean. Tuplet members render at their written value (actual × N/M), same as the
+// drum path. Returns { tickables, tuplets } in the same shape buildMeasure expects.
+function buildTabMeasureTickables(measure) {
+  const mPos = measure.position;
+
+  const groups = new Map();   // gid -> { members:[{rel,ev}], n, m }
+  const plain = [];           // {rel, ev} — note OR rest events, in order
+  for (const ev of measure.events) {
+    const rel = fSub(ev.position, mPos);
+    if (ev.tuplet_group != null) {
+      let g = groups.get(ev.tuplet_group);
+      if (!g) { g = { members: [], n: ev.tuplet_n, m: ev.tuplet_m }; groups.set(ev.tuplet_group, g); }
+      g.members.push({ rel, ev });
+    } else {
+      plain.push({ rel, ev });
+    }
+  }
+
+  const anchors = plain.map(p => ({ kind: 'plain', rel: p.rel, ev: p.ev }));
+  for (const [gid, g] of groups) {
+    g.members.sort((a, b) => a.rel[0] * b.rel[1] - b.rel[0] * a.rel[1]);
+    anchors.push({ kind: 'tuplet', rel: g.members[0].rel, gid, group: g });
+  }
+  anchors.sort((a, b) => a.rel[0] * b.rel[1] - b.rel[0] * a.rel[1]);
+
+  const tokens = [];
+  let cursor = [0, 1];
+  if (anchors.length && fLT(cursor, anchors[0].rel)) {
+    for (const [vd, d] of fillRests(fSub(anchors[0].rel, cursor))) tokens.push({ type: 'rest', dur: vd, dots: d });
+    cursor = anchors[0].rel;
+  }
+
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    if (a.kind === 'tuplet') {
+      const g = a.group;
+      for (const mem of g.members) {
+        const written = fMul(mem.ev.duration, [g.n, g.m]);
+        let vd, dots;
+        const ld = lookupDur(written);
+        if (ld) { vd = ld[0]; dots = ld[1]; }
+        else { const fb = largestDurLE(written); if (!fb) continue; vd = fb[1]; dots = fb[2]; }
+        const has = mem.ev.notes && mem.ev.notes.length;
+        tokens.push({ type: has ? 'note' : 'rest', dur: vd, dots,
+                      notes: has ? mem.ev.notes : null, relpos: mem.rel, tupId: a.gid });
+      }
+      let dur = [0, 1];
+      for (const mem of g.members) dur = fAdd(dur, mem.ev.duration);
+      cursor = fAdd(a.rel, dur);
+      continue;
+    }
+    const ev = a.ev;
+    const has = ev.notes && ev.notes.length;
+    let vd, dots;
+    const ld = lookupDur(ev.duration);
+    if (ld) { vd = ld[0]; dots = ld[1]; }
+    else { const fb = largestDurLE(ev.duration); if (!fb) { cursor = fAdd(a.rel, ev.duration); continue; } vd = fb[1]; dots = fb[2]; }
+    tokens.push({ type: has ? 'note' : 'rest', dur: vd, dots, notes: has ? ev.notes : null, relpos: a.rel });
+    cursor = fAdd(a.rel, ev.duration);
+  }
+  if (fLT(cursor, measure.duration)) {
+    for (const [vd, d] of fillRests(fSub(measure.duration, cursor))) tokens.push({ type: 'rest', dur: vd, dots: d });
+  }
+
+  const tickables = [];
+  const buckets = new Map();
+  for (const t of tokens) {
+    let n;
+    if (t.type === 'rest') {
+      n = new VF.GhostNote({ duration: t.dur });   // occupies ticks, draws nothing
+      n.__isRest = true;
+    } else {
+      n = new VF.TabNote({ positions: tabPositions(t.notes), duration: t.dur });
+      if (n.render_options) n.render_options.draw_stem = false;   // clean fret numbers, no stray stems
+      for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
+      n.__posf = t.relpos[0] / t.relpos[1];
+      n.__abspos = mPos[0] / mPos[1] + n.__posf;
+    }
+    tickables.push(n);
+    if (t.tupId != null) {
+      n.__tuplet = true;
+      if (!buckets.has(t.tupId)) buckets.set(t.tupId, []);
+      buckets.get(t.tupId).push(n);
+    }
+  }
+
+  const tuplets = [];
+  for (const [gid, notes] of buckets) {
+    const g = groups.get(gid);
+    tuplets.push({ notes, num_notes: g.n, notes_occupied: g.m, bracketed: true });
+  }
+  return { tickables, tuplets };
+}
+
 const ROW_HEIGHT = 215;
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
 // Measure numbers live in the top annotation band — above EVERY notehead, accent and
@@ -662,7 +789,8 @@ function drawTies(ctx, built) {
 // any row is laid out. Tuplet objects are created here (not at draw time) so
 // VF.Tuplet's tick reduction is already in effect for the width precalc.
 function buildMeasure(m, lyrics) {
-  const { tickables: notes, tuplets: tupletSpecs } = buildMeasureTickables(m);
+  const { tickables: notes, tuplets: tupletSpecs } =
+    IS_TAB ? buildTabMeasureTickables(m) : buildMeasureTickables(m);
   let voice = null, minW = 40;
   const tuplets = [];
   if (notes.length) {
@@ -857,19 +985,27 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   let rowYTop = null, rowYBottom = null;
   let rowStartPos = null, rowStartX = 0, rowEndPos = 0, rowEndX = 0;
 
+  // Bottom staff line: line 4 for the 5-line drum stave; the lowest tab line
+  // (TUNING.length-1) for a tab stave. Used by the shared lyric-baseline / row-
+  // box / cursor-height code below so 4- and 6-string tabs size correctly.
+  const BOTTOM_LINE = IS_TAB ? (NUM_LINES - 1) : 4;
+
   let x = SIDE_MARGIN;
   for (let i = 0; i < built.length; i++) {
     const { m, notes, voice, tuplets } = built[i];
     const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
-    const stave = new VF.Stave(x, rowTop, myWidth,
-      IS_PRINT ? { spacing_between_lines_px: PRINT_LINE_SPACING } : undefined);
+    const stave = IS_TAB
+      ? new VF.TabStave(x, rowTop, myWidth, { num_lines: NUM_LINES })
+      : new VF.Stave(x, rowTop, myWidth,
+          IS_PRINT ? { spacing_between_lines_px: PRINT_LINE_SPACING } : undefined);
     // Thin grey staff lines / barlines / clef.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
-      stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
+      if (IS_TAB) { if (stave.addTabGlyph) stave.addTabGlyph(); }   // the "TAB" marker
+      else stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
     stave.setContext(ctx).draw();
-    baselineY = stave.getYForLine(4) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
+    baselineY = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
 
     // Measure number — hand-drawn in the top annotation band (NOT VexFlow's built-in,
     // which sits at notehead height and collides with a high downbeat/"+ of 4" crash or
@@ -900,7 +1036,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
         rowStartPos = mStart;
         rowStartX = stave.getNoteStartX();
         rowYTop = stave.getYForLine(0) - ACCENT_RISE - 4;
-        rowYBottom = stave.getYForLine(4) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
+        rowYBottom = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
       }
       rowEndPos = mEnd;
       rowEndX = stave.getNoteEndX();
@@ -942,7 +1078,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       x0: x, x1: x + myWidth,
       svg: svgEl,
       yTop: stave.getYForLine(0),
-      yBottom: stave.getYForLine(4),
+      yBottom: stave.getYForLine(BOTTOM_LINE),
     });
     x += myWidth;
 
@@ -958,6 +1094,25 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // zig-zagging note-relative positions. We draw the lyrics flat ourselves.
     for (const n of notes) { if (n.__ann) n.__ann.text = ''; }
 
+    if (IS_TAB) {
+      // Tab path: draw the fret numbers only. No stems/beams/accent band/flat-
+      // bottom stems — those are the drum engraving. Proportional spacing + the
+      // moving cursor carry the rhythm; tuplet brackets still draw. (Stems, beams,
+      // and slide/bend/harmonic glyphs are Phase 2 — see memory.)
+      ctx.setFillStyle(NOTE_COLOR);
+      ctx.setStrokeStyle(NOTE_COLOR);
+      ctx.setLineWidth(NOTE_LINE_WIDTH);
+      voice.draw(ctx, stave);
+      if (tuplets && tuplets.length) {
+        ctx.save();
+        ctx.setFillStyle(SECTION_COLOR);
+        ctx.setStrokeStyle(SECTION_COLOR);
+        for (const tp of tuplets) {
+          try { tp.setContext(ctx).draw(); } catch (e) { console.warn('tab tuplet draw m', m.index, e); }
+        }
+        ctx.restore();
+      }
+    } else {
     // Flat beams on a fixed line below the staff so every beam is horizontal and
     // at the same height across the row. Full tickable list (rests included) so
     // beams break at rests. Must run before voice.draw — beaming suppresses the
@@ -1032,16 +1187,22 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       }
       ctx.restore();
     }
+    }   // end drum-draw branch
 
     // Collect this bar's lyrics (drawn together afterwards so hyphens can span
     // bar lines). Cursor anchors are per-barline now (captured above), not per-note.
     for (const n of notes) {
       if (!n.__lyric) continue;
-      rowLyrics.push({ x: (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2, text: n.__lyric, cont: n.__cont });
+      // Centre x under the note. StaveNotes expose note-head begin/end; TabNotes
+      // don't, so fall back to the formatted absolute x there.
+      const lx = (n.getNoteHeadBeginX && n.getNoteHeadEndX)
+        ? (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2
+        : (n.getAbsoluteX ? n.getAbsoluteX() : 0);
+      rowLyrics.push({ x: lx, text: n.__lyric, cont: n.__cont });
     }
   }
 
-  drawTies(ctx, built);
+  if (!IS_TAB) drawTies(ctx, built);   // tab ties (same-string) are Phase 2
 
   drawRowLyrics(ctx, baselineY, rowLyrics);
 
@@ -1073,6 +1234,13 @@ function renderScore(score, container, opts) {
   opts = opts || {};
   const print = !!opts.print;
   applyPalette(print);   // swap to the high-contrast/heavier palette for the printout
+  // Pick the engraving mode from the score's instrument. Tab gets a TabStave of
+  // TUNING.length lines; drums keep the 5-line percussion stave. Everything else
+  // (rows, spacing, cursor, lyrics) is shared.
+  INSTRUMENT = score.instrument || 'drums';
+  IS_TAB = INSTRUMENT !== 'drums';
+  TUNING = score.tuning || null;
+  NUM_LINES = (IS_TAB && TUNING && TUNING.length) ? TUNING.length : (IS_TAB ? 6 : 5);
   const measures = score.measures;
   // Lyrics gated by the user's setting (PlayerUI); empty array = none drawn.
   const lyrics = (window.PlayerUI && !PlayerUI.lyricsOn()) ? [] : (score.lyrics || []);
@@ -1170,8 +1338,27 @@ function renderScore(score, container, opts) {
   // IF the user opted into the song-map page (off by default); otherwise it trails the
   // score as on screen. So the roadmap is opt-in and never forced.
   const wantRoadmap = print && window.PlayerUI && PlayerUI.roadmapOn();
-  if (wantRoadmap) renderRoadmap(score, container);
+  if (IS_TAB) renderTuningKey(score, container);
+  else if (wantRoadmap) renderRoadmap(score, container);
   else renderDrumKey(score, container);
+}
+
+// Tab legend: the open-string tuning, low→high, named (the tab equivalent of the
+// drum key). TUNING is MIDI numbers high→low; we reverse to read bottom-line-up
+// the way a player counts strings, and name each with its pitch class.
+const _PC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function midiName(m) { return _PC[((m % 12) + 12) % 12]; }
+function renderTuningKey(score, container) {
+  const t = score.tuning;
+  if (!t || !t.length) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'drumkey';   // reuse the existing legend styling
+  const title = document.createElement('div');
+  title.className = 'drumkey-title';
+  const lowHigh = [...t].reverse().map(midiName).join(' ');
+  title.textContent = `Tuning (low→high): ${lowHigh}  ·  ${t.length}-string`;
+  wrap.appendChild(title);
+  container.appendChild(wrap);
 }
 
 // Print-only first page: a condensed "song map" you read before playing — the form

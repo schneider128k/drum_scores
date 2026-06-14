@@ -8,6 +8,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "AC/DC",
     "title": "Back In Black",
+    "name": "Drums | Phil Rudd | Sonor Phonic Series",
     "lyrics": true
   },
   {
@@ -17,6 +18,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "AC/DC",
     "title": "Highway To Hell",
+    "name": "Phil Rudd | Gretsch \"Phonics\" Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -26,6 +28,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "AC/DC",
     "title": "Thunderstruck",
+    "name": "Chris Slade | Pearl Reference Series | Drums",
     "lyrics": true
   },
   {
@@ -35,6 +38,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "blink-182",
     "title": "All The Small Things",
+    "name": "Travis Barker | Orange County Kit | Drums",
     "lyrics": true
   },
   {
@@ -44,6 +48,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "blink-182",
     "title": "Dammit",
+    "name": "Scott Raynor | Pork Pie Maple Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -53,6 +58,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "blink-182",
     "title": "First Date",
+    "name": "Travis Barker | Orange County Kit | Drums",
     "lyrics": true
   },
   {
@@ -62,6 +68,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "blink-182",
     "title": "I Miss You",
+    "name": "Travis Barker | Orange County Kit | Drums",
     "lyrics": true
   },
   {
@@ -71,6 +78,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "blink-182",
     "title": "What's My Age Again?",
+    "name": "Travis Barker | Orange County Kit | Drums",
     "lyrics": true
   },
   {
@@ -80,6 +88,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Bon Jovi",
     "title": "Livin' On A Prayer",
+    "name": "Tico Torres | Drums",
     "lyrics": true
   },
   {
@@ -89,6 +98,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Deep Purple",
     "title": "Smoke On The Water",
+    "name": "Ian Paice | Ludwig Classic Maple | Drums",
     "lyrics": true
   },
   {
@@ -98,6 +108,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Dragonforce",
     "title": "Through The Fire And Flames",
+    "name": "Dave Mackintosh | Tama Starclassic Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -107,6 +118,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Foo Fighters",
     "title": "Everlong",
+    "name": "Dave Grohl | Tama Artstar II | Drums",
     "lyrics": true
   },
   {
@@ -116,6 +128,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Ghost",
     "title": "Call Me Little Sunshine",
+    "name": "Mountain",
     "lyrics": false
   },
   {
@@ -125,6 +138,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Ghost",
     "title": "Dance Macabre",
+    "name": "Drums - Mountain",
     "lyrics": false
   },
   {
@@ -134,6 +148,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Ghost",
     "title": "Hunter's Moon",
+    "name": "",
     "lyrics": false
   },
   {
@@ -143,6 +158,37 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Ghost",
     "title": "Rats",
+    "name": "Mountain",
+    "lyrics": true
+  },
+  {
+    "id": "412647_2",
+    "song_id": 412647,
+    "part_id": 2,
+    "instrument": "guitar",
+    "artist": "Ghost",
+    "title": "Square Hammer",
+    "name": "Fire - Lead",
+    "lyrics": true
+  },
+  {
+    "id": "412647_3",
+    "song_id": 412647,
+    "part_id": 3,
+    "instrument": "guitar",
+    "artist": "Ghost",
+    "title": "Square Hammer",
+    "name": "Aether - Rhythm",
+    "lyrics": true
+  },
+  {
+    "id": "412647_4",
+    "song_id": 412647,
+    "part_id": 4,
+    "instrument": "bass",
+    "artist": "Ghost",
+    "title": "Square Hammer",
+    "name": "Water",
     "lyrics": true
   },
   {
@@ -152,6 +198,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Ghost",
     "title": "Square Hammer",
+    "name": "Earth",
     "lyrics": true
   },
   {
@@ -161,6 +208,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Green Day",
     "title": "Basket Case",
+    "name": "Tré Cool | DW Collector's Series Custom Kit | Drumset",
     "lyrics": true
   },
   {
@@ -170,6 +218,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Guns N' Roses",
     "title": "Sweet Child O' Mine",
+    "name": "Steven Adler | Gretsch Drums",
     "lyrics": true
   },
   {
@@ -179,6 +228,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Kansas",
     "title": "Carry On Wayward Son",
+    "name": "Phil Ehart - Drums",
     "lyrics": true
   },
   {
@@ -188,6 +238,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Megadeth",
     "title": "Symphony Of Destruction",
+    "name": "Nick Menza | Tama Artstar Custom Drums",
     "lyrics": true
   },
   {
@@ -197,6 +248,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Enter Sandman",
+    "name": "Lars Ulrich | TAMA Artstar II | Drums",
     "lyrics": true
   },
   {
@@ -206,6 +258,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "For Whom The Bell Tolls",
+    "name": "Lars Ulrich | TAMA Imperialstar | Drums",
     "lyrics": true
   },
   {
@@ -215,6 +268,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Master of Puppets",
+    "name": "Lars Ulrich | Tama Superstar Birch Kit | Drums",
     "lyrics": true
   },
   {
@@ -224,6 +278,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Nothing Else Matters",
+    "name": "Lars Ulrich | TAMA Artstar II | Drums",
     "lyrics": true
   },
   {
@@ -233,6 +288,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "One",
+    "name": "Lars Ulrich | Tama Starclassic Kit | Drums",
     "lyrics": true
   },
   {
@@ -242,6 +298,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Metallica",
     "title": "Sad But True",
+    "name": "Lars Ulrich | TAMA Starclassic Maple | Drums",
     "lyrics": true
   },
   {
@@ -251,6 +308,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Mötley Crüe",
     "title": "Kickstart My Heart",
+    "name": "Tommy Lee | DW Collectors Series Custom | Drums",
     "lyrics": true
   },
   {
@@ -260,6 +318,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Nirvana",
     "title": "Come As You Are",
+    "name": "Dave Grohl | Tama Granstar | Drums",
     "lyrics": true
   },
   {
@@ -269,6 +328,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Nirvana",
     "title": "Heart-Shaped Box",
+    "name": "Dave Grohl | Tama Granstar Kit | Drums",
     "lyrics": true
   },
   {
@@ -278,6 +338,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Nirvana",
     "title": "In Bloom",
+    "name": "Dave Grohl | Tama Artstar II | Drums",
     "lyrics": true
   },
   {
@@ -287,6 +348,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Nirvana",
     "title": "Smells Like Teen Spirit",
+    "name": "Dave Grohl | Tama Granstar | Drums",
     "lyrics": true
   },
   {
@@ -296,6 +358,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Nirvana",
     "title": "The Man Who Sold The World",
+    "name": "Dave Grohl - Drums | Vintage Slingerland Drum Kit",
     "lyrics": true
   },
   {
@@ -305,6 +368,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Oasis",
     "title": "Wonderwall",
+    "name": "Alan \"Whitey\" White | Ludwig Super Classic | Drums",
     "lyrics": true
   },
   {
@@ -314,6 +378,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Phil Collins",
     "title": "In The Air Tonight",
+    "name": "Phil Collins - Premier Concert Kit | Drums",
     "lyrics": true
   },
   {
@@ -323,6 +388,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Pixies",
     "title": "Wave Of Mutilation",
+    "name": "David Lovering",
     "lyrics": false
   },
   {
@@ -332,6 +398,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Queen",
     "title": "Another One Bites the Dust",
+    "name": "Roger Taylor | Drum Loops",
     "lyrics": true
   },
   {
@@ -341,6 +408,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Radiohead",
     "title": "Creep",
+    "name": "Philip Selway | DW Collector's Series | Drums",
     "lyrics": true
   },
   {
@@ -350,6 +418,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Rage Against The Machine",
     "title": "Killing in the Name",
+    "name": "Brad Wilk | Grestch Kit | Drums",
     "lyrics": true
   },
   {
@@ -359,6 +428,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Red Hot Chili Peppers",
     "title": "Can't Stop",
+    "name": "Chad Smith | Pearl Masters Custom Silver Sparkle | Drums",
     "lyrics": true
   },
   {
@@ -368,6 +438,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Rush",
     "title": "Tom Sawyer",
+    "name": "Neil Peart | Tama \"Old Faithful\" Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -377,6 +448,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Slipknot",
     "title": "Before I Forget",
+    "name": "Joey Jordison | Orange County Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -386,6 +458,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Slipknot",
     "title": "Duality",
+    "name": "Joey Jordison | Orange County Custom Kit | Drums",
     "lyrics": true
   },
   {
@@ -395,6 +468,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Slipknot",
     "title": "Psychosocial",
+    "name": "Joey Jordison | Drums | Pearl Masters Kit |",
     "lyrics": true
   },
   {
@@ -404,6 +478,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Survivor",
     "title": "Eye Of The Tiger",
+    "name": "Marc Droubay | Ludwig Drums",
     "lyrics": true
   },
   {
@@ -413,6 +488,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "The Cranberries",
     "title": "Zombie",
+    "name": "Fergal Lawler | DW Collector Series Kit | Drums",
     "lyrics": true
   },
   {
@@ -422,6 +498,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "The Police",
     "title": "Message In A Bottle",
+    "name": "Stewart Copeland | Tama Imperialstar",
     "lyrics": true
   },
   {
@@ -431,6 +508,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Toto",
     "title": "Africa",
+    "name": "Jeff Porcaro | Drums",
     "lyrics": true
   },
   {
@@ -440,6 +518,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Toto",
     "title": "Rosanna",
+    "name": "Jeff Porcaro",
     "lyrics": false
   },
   {
@@ -449,6 +528,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Type O Negative",
     "title": "Black No. 1 (Little Miss Scare-All)",
+    "name": "Sal Abruscato | Drums",
     "lyrics": true
   },
   {
@@ -458,6 +538,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Type O Negative",
     "title": "Love You To Death",
+    "name": "Johnny Kelly",
     "lyrics": true
   },
   {
@@ -467,6 +548,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Van Halen",
     "title": "Hot For Teacher",
+    "name": "Alex Van Halen | Lead kit - Ludwig Classic Maple",
     "lyrics": true
   }
 ];

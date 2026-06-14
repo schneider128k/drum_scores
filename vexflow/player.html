@@ -34,6 +34,20 @@
       border-top: 1px solid #e2e2e2;
       padding: 7px 3% 9px;
     }
+    /* Instrument / track switcher — the song page opens on one part (drums by
+       default) and these pills jump to the song's other tracks. Hidden when the
+       song has only one track. */
+    .iswitch { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .iswitch:empty { display: none; }
+    .iswitch .cap { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #999; margin-right: 2px; }
+    .isw {
+      font-size: 12px; font-weight: 600; text-decoration: none; color: #555;
+      background: #fff; border: 1px solid #cfcfcf; border-radius: 999px; padding: 5px 12px;
+    }
+    .isw:hover { border-color: #888; color: #1a1a1a; }
+    .isw.on { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+    @media print { .iswitch { display: none !important; } }
+
     /* Top line: the live readout, plus the ad/Sync hint when there is one. */
     .dock-top { display: flex; align-items: baseline; gap: 12px; min-height: 16px; }
     #status { font-size: 13px; font-weight: 600; color: #555; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -163,6 +177,7 @@
   <div id="score"></div>
 
   <div id="dock">
+    <div class="iswitch" id="instrument-switch"></div>
     <div class="dock-top">
       <span id="status">Loading…</span>
       <span id="hint"></span>
@@ -219,7 +234,41 @@
   </script>
 
   <script src="vexflow.js"></script>
+  <script src="../songs.js"></script>
   <script src="player_common.js"></script>
   <script src="renderer.js"></script>
+
+  <!-- Instrument / track switcher: build pills for every track of THIS song from
+       the manifest (window.SONGS), highlighting the one in view. Drums first,
+       then guitar(s), then bass; multiple guitars are disambiguated by their
+       track name (Rhythm / Lead). Hidden when the song has a single track. -->
+  <script>
+    (function () {
+      var SCORE = window.SCORE, SONGS = window.SONGS || [];
+      var host = document.getElementById('instrument-switch');
+      if (!SCORE || !host) return;
+      var sibs = SONGS.filter(function (s) { return s.song_id === SCORE.song_id; });
+      if (sibs.length < 2) return;   // nothing to switch between
+      var rank = { drums: 0, guitar: 1, bass: 2 };
+      sibs.sort(function (a, b) {
+        return (rank[a.instrument] - rank[b.instrument]) || (a.part_id - b.part_id);
+      });
+      var cur = SCORE.song_id + '_' + SCORE.part_id;
+      function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+      var html = '<span class="cap">Instrument</span>';
+      html += sibs.map(function (s) {
+        var label = cap(s.instrument);
+        var sameInst = sibs.filter(function (x) { return x.instrument === s.instrument; });
+        if (sameInst.length > 1 && s.name) {
+          var m = /(rhythm|lead|solo|bass)/i.exec(s.name);
+          if (m) label += ' (' + cap(m[1].toLowerCase()) + ')';
+        }
+        var on = s.id === cur;
+        return '<a class="isw' + (on ? ' on' : '') + '" href="player.html?song=' +
+               encodeURIComponent(s.id) + '">' + label + '</a>';
+      }).join('');
+      host.innerHTML = html;
+    })();
+  </script>
 </body>
 </html>
