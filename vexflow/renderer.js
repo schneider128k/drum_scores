@@ -458,10 +458,24 @@ function tabPositions(notes) {
     const str = (gn.string | 0) + 1;
     if (seen.has(str)) continue;
     seen.add(str);
-    out.push({ str, fret: gn.dead ? 'X' : gn.fret, __gn: gn });
+    // Dead note → ×; natural/artificial harmonic → fret in angle brackets ⟨5⟩
+    // (the standard tab convention), else the plain fret number.
+    let fret = gn.fret;
+    if (gn.dead) fret = 'X';
+    else if (gn.harmonic) fret = '⟨' + gn.fret + '⟩';
+    out.push({ str, fret, __gn: gn });
   }
   out.sort((a, b) => a.str - b.str);
   return out;
+}
+
+// A VF.Bend from Songsterr's bend object {tone, points}. tone is the peak in
+// Songsterr units (50 = half step, 100 = whole). We label the amount; the
+// constructor signature varies by VexFlow build, so try object then string form.
+function makeBend(bend) {
+  const tone = (bend && bend.tone) || 0;
+  const text = tone >= 100 ? 'full' : tone >= 75 ? '¾' : tone >= 50 ? '½' : '¼';
+  try { return new VF.Bend({ text }); } catch (e) { return new VF.Bend(text); }
 }
 
 // Build VexFlow TabNotes for one measure. Unlike drums (instantaneous hits that
@@ -560,10 +574,29 @@ function buildTabMeasureTickables(measure) {
       // record which strings are tie CONTINUATIONS (gn.tie = held from the previous
       // same-string note). drawTabTies joins them with an arc, like Songsterr.
       n.__strIndex = {};
-      positions.forEach((p, idx) => { n.__strIndex[p.str] = idx; });
+      n.__fretByStr = {};
+      positions.forEach((p, idx) => {
+        n.__strIndex[p.str] = idx;
+        const f = parseInt(p.__gn && p.__gn.fret, 10);
+        n.__fretByStr[p.str] = isNaN(f) ? 0 : f;
+      });
       n.__tieStrings = positions.filter(p => p.__gn && p.__gn.tie).map(p => p.str);
+      // Forward connectors: a slide / hammer-on-pull-off joins this note to the
+      // NEXT note on the same string (drawn at row level once both have x).
+      n.__slideStrings = positions.filter(p => p.__gn && p.__gn.slide).map(p => p.str);
+      n.__hpStrings = positions.filter(p => p.__gn && p.__gn.hammer).map(p => p.str);
       n.__chord = t.chord || null;     // chord name to draw above the tab
       n.__pm = !!t.pm;                 // palm-mute flag (drives the P.M. dashed line)
+      // Per-note modifiers: vibrato (wavy line) and bend (arrow + amount).
+      positions.forEach((p, idx) => {
+        const gn = p.__gn; if (!gn) return;
+        if (gn.vibrato && VF.Vibrato) {
+          try { n.addModifier(new VF.Vibrato(), idx); } catch (e) { /* skip */ }
+        }
+        if (gn.bend && VF.Bend) {
+          try { n.addModifier(makeBend(gn.bend), idx); } catch (e) { /* skip */ }
+        }
+      });
     }
     tickables.push(n);
     if (t.tupId != null) {
@@ -874,6 +907,50 @@ function drawTabTies(ctx, built) {
           first_indices: [prev.__strIndex[str]], last_indices: [cont.__strIndex[str]],
         }).setContext(ctx).draw();
       } catch (e) { console.warn('[tabtie] draw failed str', str, e); }
+    }
+  }
+  ctx.restore();
+}
+
+// Forward connectors for tab: a slide joins a note to the next note on the same
+// string with a diagonal VF.TabSlide; a hammer-on/pull-off (hp) joins them with a
+// slur arc (a TabTie reads as the slur). Both target the immediately-following
+// note when it shares the string — the legato run's adjacent member.
+function _nextTabNote(seq, i) {
+  for (let j = i + 1; j < seq.length; j++) {
+    if (!seq[j].__isRest && seq[j].__strIndex) return seq[j];
+  }
+  return null;
+}
+function drawTabConnectors(ctx, built) {
+  const seq = [];
+  for (const b of built) for (const n of b.notes) seq.push(n);
+  ctx.save();
+  ctx.setStrokeStyle(NOTE_COLOR);
+  ctx.setFillStyle(NOTE_COLOR);
+  for (let i = 0; i < seq.length; i++) {
+    const cur = seq[i];
+    const nxt = (cur.__slideStrings && cur.__slideStrings.length) ||
+                (cur.__hpStrings && cur.__hpStrings.length) ? _nextTabNote(seq, i) : null;
+    if (!nxt) continue;
+    for (const str of (cur.__slideStrings || [])) {
+      if (!(str in nxt.__strIndex)) continue;
+      const up = (nxt.__fretByStr[str] || 0) >= (cur.__fretByStr[str] || 0);
+      try {
+        new VF.TabSlide({
+          first_note: cur, last_note: nxt,
+          first_indices: [cur.__strIndex[str]], last_indices: [nxt.__strIndex[str]],
+        }, up ? VF.TabSlide.SLIDE_UP : VF.TabSlide.SLIDE_DOWN).setContext(ctx).draw();
+      } catch (e) { console.warn('[tabslide] str', str, e); }
+    }
+    for (const str of (cur.__hpStrings || [])) {
+      if (!(str in nxt.__strIndex)) continue;
+      try {
+        new VF.TabTie({
+          first_note: cur, last_note: nxt,
+          first_indices: [cur.__strIndex[str]], last_indices: [nxt.__strIndex[str]],
+        }).setContext(ctx).draw();
+      } catch (e) { console.warn('[tabhp] str', str, e); }
     }
   }
   ctx.restore();
@@ -1349,7 +1426,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     }
   }
 
-  if (IS_TAB) drawTabTies(ctx, built); else drawTies(ctx, built);
+  if (IS_TAB) { drawTabTies(ctx, built); drawTabConnectors(ctx, built); } else drawTies(ctx, built);
 
   if (IS_TAB && rowTopLineY != null) {
     drawPalmMute(ctx, rowTopLineY - PM_RISE, pmFlow);
