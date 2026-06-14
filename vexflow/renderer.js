@@ -475,7 +475,12 @@ function tabPositions(notes) {
 function makeBend(bend) {
   const tone = (bend && bend.tone) || 0;
   const text = tone >= 100 ? 'full' : tone >= 75 ? '¾' : tone >= 50 ? '½' : '¼';
-  try { return new VF.Bend({ text }); } catch (e) { return new VF.Bend(text); }
+  // This VexFlow build's Bend takes a STRING (passing an object renders the
+  // literal "[object Object]"). A bend whose points return toward 0 is a
+  // bend-and-release, so flag the release form.
+  const pts = (bend && bend.points) || [];
+  const release = pts.length > 2 && pts[pts.length - 1].tone < (bend.tone || 0);
+  try { return new VF.Bend(text, release); } catch (e) { return null; }
 }
 
 // Build VexFlow TabNotes for one measure. Unlike drums (instantaneous hits that
@@ -594,7 +599,8 @@ function buildTabMeasureTickables(measure) {
           try { n.addModifier(new VF.Vibrato(), idx); } catch (e) { /* skip */ }
         }
         if (gn.bend && VF.Bend) {
-          try { n.addModifier(makeBend(gn.bend), idx); } catch (e) { /* skip */ }
+          const bm = makeBend(gn.bend);
+          if (bm) { try { n.addModifier(bm, idx); } catch (e) { /* skip */ } }
         }
       });
     }
@@ -991,8 +997,17 @@ function buildMeasure(m, lyrics) {
     //     (e.g. the Square Hammer intro run "12 10 8 6 4 2 1 0") cram badly at 26.
     //     Reserve ~30px per single-digit fret and ~42px per two-digit one.
     if (IS_TAB) {
+      // Per-note reservation: a fret number (wider when 2-digit), plus extra room
+      // when the note carries a slide so the diagonal between it and the next fret
+      // isn't crushed — the Square Hammer intro is a 32nd-note slide run and was
+      // squeezing the slide marks between 12·10·8·6.
       let floor = 0;
-      for (const n of notes) floor += n.__isRest ? 14 : (n.__wide ? 42 : 30);
+      for (const n of notes) {
+        if (n.__isRest) { floor += 14; continue; }
+        let wnote = n.__wide ? 44 : 32;
+        if (n.__slideStrings && n.__slideStrings.length) wnote += 14;
+        floor += wnote;
+      }
       minW = Math.max(minW, floor);
     } else {
       minW = Math.max(minW, notes.length * 26);
