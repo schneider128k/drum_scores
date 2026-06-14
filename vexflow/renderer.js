@@ -866,12 +866,28 @@ function drawPalmMute(ctx, y, pmFlow) {
   ctx.setFillStyle(SECTION_COLOR);
   ctx.setStrokeStyle(SECTION_COLOR);
   ctx.setLineWidth(1);
-  let i = 0;
-  while (i < pmFlow.length) {
-    if (!pmFlow[i].on) { i++; continue; }
-    let j = i;
-    while (j + 1 < pmFlow.length && pmFlow[j + 1].on) j++;
-    const x0 = pmFlow[i].x, x1 = pmFlow[j].x;
+  // Build the muted runs, then COALESCE runs separated by a short unmuted gap
+  // (held/tied beats between chugs) into one span, so a muted phrase reads as a
+  // single "P.M. ⋯⋯⋯" line — the way Songsterr shows it — not a stutter of labels.
+  const runs = [];
+  let s = 0;
+  while (s < pmFlow.length) {
+    if (!pmFlow[s].on) { s++; continue; }
+    let e = s;
+    while (e + 1 < pmFlow.length && pmFlow[e + 1].on) e++;
+    runs.push([s, e]);
+    s = e + 1;
+  }
+  const GAP = 2;   // bridge up to two unmuted beats between muted ones
+  const merged = [];
+  for (const r of runs) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] - last[1] - 1 <= GAP) last[1] = r[1];
+    else merged.push(r.slice());
+  }
+
+  for (const [a, b] of merged) {
+    const x0 = pmFlow[a].x, x1 = pmFlow[b].x;
     ctx.fillText('P.M.', x0 - 8, y);
     // Hand-drawn dashes (VexFlow's SVG context has no setLineDash) from past the
     // label to the run's last muted beat.
@@ -879,7 +895,6 @@ function drawPalmMute(ctx, y, pmFlow) {
     for (let dx = lineStart; dx < x1; dx += 6) {
       ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(Math.min(dx + 3, x1), dy); ctx.stroke();
     }
-    i = j + 1;
   }
   ctx.restore();
 }
@@ -1501,7 +1516,12 @@ function renderScore(score, container, opts) {
   const cw = Math.max(MIN_PAGE_WIDTH, Math.floor(container.clientWidth) || PAGE_WIDTH);
   const barsPerRow = print ? BARS_PER_ROW : (cw < NARROW_BP ? NARROW_BARS : BARS_PER_ROW);
   const ROW_BEATS = barsPerRow * 4;   // quarter-note beats per row (16 iPad/print, 8 phone)
-  const rowHeight = print ? PRINT_ROW_HEIGHT : ROW_HEIGHT;
+  // Tab rows are taller: a 6-string TabStave + the downward rhythm stems/beams +
+  // the lyric line below them need more vertical room than the 5-line drum staff,
+  // or the lyric baseline falls past the row's SVG viewBox and gets clipped (the
+  // "Living in the night" lyrics were drawn off-canvas). Add headroom for tab.
+  const TAB_ROW_EXTRA = 56;
+  const rowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0);
   const rowTop = print ? PRINT_ROW_TOP : ROW_TOP;
 
   // Build every measure once, then greedily pack bars into a row until the next bar
