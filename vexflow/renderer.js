@@ -514,7 +514,8 @@ function buildTabMeasureTickables(measure) {
         else { const fb = largestDurLE(written); if (!fb) continue; vd = fb[1]; dots = fb[2]; }
         const has = mem.ev.notes && mem.ev.notes.length;
         tokens.push({ type: has ? 'note' : 'rest', dur: vd, dots,
-                      notes: has ? mem.ev.notes : null, relpos: mem.rel, tupId: a.gid });
+                      notes: has ? mem.ev.notes : null, relpos: mem.rel, tupId: a.gid,
+                      chord: mem.ev.chord, pm: mem.ev.palm_mute });
       }
       let dur = [0, 1];
       for (const mem of g.members) dur = fAdd(dur, mem.ev.duration);
@@ -527,7 +528,8 @@ function buildTabMeasureTickables(measure) {
     const ld = lookupDur(ev.duration);
     if (ld) { vd = ld[0]; dots = ld[1]; }
     else { const fb = largestDurLE(ev.duration); if (!fb) { cursor = fAdd(a.rel, ev.duration); continue; } vd = fb[1]; dots = fb[2]; }
-    tokens.push({ type: has ? 'note' : 'rest', dur: vd, dots, notes: has ? ev.notes : null, relpos: a.rel });
+    tokens.push({ type: has ? 'note' : 'rest', dur: vd, dots, notes: has ? ev.notes : null,
+                  relpos: a.rel, chord: ev.chord, pm: ev.palm_mute });
     cursor = fAdd(a.rel, ev.duration);
   }
   if (fLT(cursor, measure.duration)) {
@@ -560,6 +562,8 @@ function buildTabMeasureTickables(measure) {
       n.__strIndex = {};
       positions.forEach((p, idx) => { n.__strIndex[p.str] = idx; });
       n.__tieStrings = positions.filter(p => p.__gn && p.__gn.tie).map(p => p.str);
+      n.__chord = t.chord || null;     // chord name to draw above the tab
+      n.__pm = !!t.pm;                 // palm-mute flag (drives the P.M. dashed line)
     }
     tickables.push(n);
     if (t.tupId != null) {
@@ -797,6 +801,50 @@ function drawTies(ctx, built) {
   ctx.restore();
 }
 
+// Chord names (D5, B♭5 …) above the tab, centred on the beat they label. Songsterr
+// shows the chord where it CHANGES; we draw each one the score carries.
+const CHORD_RISE = 22;   // px above the top tab line
+function drawTabChords(ctx, y, items) {
+  if (!items.length) return;
+  ctx.save();
+  ctx.setFont('Georgia', IS_PRINT ? 13 : 12, 'bold');
+  ctx.setFillStyle(NOTE_COLOR);
+  for (const it of items) {
+    const w = ctx.measureText(it.text).width;
+    ctx.fillText(it.text, it.x - w / 2, y);
+  }
+  ctx.restore();
+}
+
+// Palm mute: "P.M." then a dashed line spanning each run of palm-muted beats
+// (Songsterr's notation for the muted chug). pmFlow is {x, on} per note in row
+// order; a run is a maximal block of on=true. Drawn just above the tab.
+const PM_RISE = 6;       // px above the top tab line (sits below the chord row)
+function drawPalmMute(ctx, y, pmFlow) {
+  if (!pmFlow.length) return;
+  ctx.save();
+  ctx.setFont('Georgia', 11, 'italic');
+  ctx.setFillStyle(SECTION_COLOR);
+  ctx.setStrokeStyle(SECTION_COLOR);
+  ctx.setLineWidth(1);
+  let i = 0;
+  while (i < pmFlow.length) {
+    if (!pmFlow[i].on) { i++; continue; }
+    let j = i;
+    while (j + 1 < pmFlow.length && pmFlow[j + 1].on) j++;
+    const x0 = pmFlow[i].x, x1 = pmFlow[j].x;
+    ctx.fillText('P.M.', x0 - 8, y);
+    // Hand-drawn dashes (VexFlow's SVG context has no setLineDash) from past the
+    // label to the run's last muted beat.
+    const lineStart = x0 + 22, dy = y - 3;
+    for (let dx = lineStart; dx < x1; dx += 6) {
+      ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(Math.min(dx + 3, x1), dy); ctx.stroke();
+    }
+    i = j + 1;
+  }
+  ctx.restore();
+}
+
 // Draw tab ties across the whole row. A TabNote position flagged gn.tie is a
 // CONTINUATION — held from the previous note on the same string, not re-picked —
 // so we arc back to that prior same-string note (even across a bar line), the way
@@ -1024,6 +1072,9 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   const widths = allocateWidths(weights, floors, target, fullAvail);
 
   const rowLyrics = [];   // {x, text, cont} collected across the row, drawn last
+  const rowChords = [];   // {x, text} tab chord names, drawn above the staff
+  const pmFlow = [];      // {x, on} per tab note in row order → P.M. dashed spans
+  let rowTopLineY = null; // y of the first stave's top line (chord/P.M. placement)
   let baselineY = rowTop;
 
   // Playback-cursor anchors for this row: {seconds, x} at each notehead, plus a
@@ -1060,6 +1111,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       else stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
     stave.setContext(ctx).draw();
+    if (rowTopLineY === null) rowTopLineY = stave.getYForLine(0);
     baselineY = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
 
     // Measure number — hand-drawn in the top annotation band (NOT VexFlow's built-in,
@@ -1151,25 +1203,42 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
 
     if (IS_TAB) {
       // Rhythm strip below the tab (Songsterr-style): each note carries a downward
-      // stem + flag so its value reads at a glance; contiguous beamable notes (8th
-      // and shorter) are joined by beams, breaking at rests and longer notes. This
-      // is the "I can't tell the note value from bare numbers" fix.
+      // stem + flag, and beamable notes (8th and shorter) join into beams. CRUCIAL:
+      // beams group BY BEAT — they break at every notated beat boundary, never run
+      // across the bar. So a 4/4 bar reads one beam group per quarter beat (≤2 eighths
+      // or ≤4 sixteenths each), a lone note on a beat gets a single stem, "1 +" gives
+      // a beamed pair — standard engraving, the way the eye parses the pulse. Beams
+      // also break at rests and at non-beamable (quarter+) notes.
       const beamable = new Set(['8', '16', '32', '64']);
+      const beatLen = m.time_sig[1] ? 1 / m.time_sig[1] : 0.25;   // whole-note length of one beat
+      const BEAT_EPS = 1e-6;
       const beams = [];
-      let run = [];
+      let run = [], runBeat = -1;
       const flushRun = () => {
         if (run.length >= 2) { try { beams.push(new VF.Beam(run)); } catch (e) { console.warn('tab beam m', m.index, e); } }
         run = [];
       };
       for (const n of notes) {
         const dur = n.getDuration && n.getDuration();
-        if (!n.__isRest && !n.__tuplet && beamable.has(dur)) run.push(n);
-        else flushRun();
+        if (n.__isRest || n.__tuplet || !beamable.has(dur)) { flushRun(); runBeat = -1; continue; }
+        const beat = Math.floor((n.__posf || 0) / beatLen + BEAT_EPS);
+        if (run.length && beat !== runBeat) flushRun();   // break the beam at the beat line
+        run.push(n);
+        runBeat = beat;
       }
       flushRun();
+      // Tuplet members beam among themselves (one bracketed group per tuplet).
       for (const tp of tuplets) {
         const tn = tp.notes.filter(n => !n.__isRest && beamable.has(n.getDuration && n.getDuration()));
         if (tn.length >= 2) { try { beams.push(new VF.Beam(tn)); } catch (e) { console.warn('tab tbeam m', m.index, e); } }
+      }
+      // Collect chord names + palm-mute spans (drawn at row level after the loop so
+      // a P.M. line can run across bar lines). x is each note's formatted centre.
+      for (const n of notes) {
+        if (n.__isRest || !n.getAbsoluteX) continue;
+        const nx = n.getAbsoluteX();
+        if (n.__chord) rowChords.push({ x: nx, text: n.__chord });
+        pmFlow.push({ x: nx, on: !!n.__pm });
       }
       ctx.setFillStyle(NOTE_COLOR);
       ctx.setStrokeStyle(NOTE_COLOR);
@@ -1281,6 +1350,11 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   }
 
   if (IS_TAB) drawTabTies(ctx, built); else drawTies(ctx, built);
+
+  if (IS_TAB && rowTopLineY != null) {
+    drawPalmMute(ctx, rowTopLineY - PM_RISE, pmFlow);
+    drawTabChords(ctx, rowTopLineY - CHORD_RISE, rowChords);
+  }
 
   drawRowLyrics(ctx, baselineY, rowLyrics);
 
