@@ -542,11 +542,24 @@ function buildTabMeasureTickables(measure) {
       n = new VF.GhostNote({ duration: t.dur });   // occupies ticks, draws nothing
       n.__isRest = true;
     } else {
-      n = new VF.TabNote({ positions: tabPositions(t.notes), duration: t.dur });
-      if (n.render_options) n.render_options.draw_stem = false;   // clean fret numbers, no stray stems
+      // draw_stem (2nd arg) renders a downward stem + flag below the tab so the
+      // note VALUE reads at a glance — the Songsterr look. Beamed runs replace the
+      // flags with beams (renderRow). draw_dots shows the augmentation dot.
+      const positions = tabPositions(t.notes);
+      n = new VF.TabNote({ positions, duration: t.dur }, true);
+      if (n.render_options) { n.render_options.draw_stem = true; n.render_options.draw_dots = true; }
+      if (n.setStemDirection) n.setStemDirection(-1);   // stem hangs BELOW the tab
       for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
       n.__posf = t.relpos[0] / t.relpos[1];
       n.__abspos = mPos[0] / mPos[1] + n.__posf;
+      // Two-digit frets (10+) are ~twice as wide; flag so the bar floor reserves room.
+      n.__wide = positions.some(p => String(p.fret).length > 1);
+      // Tie support: map each string to its index in this TabNote's positions, and
+      // record which strings are tie CONTINUATIONS (gn.tie = held from the previous
+      // same-string note). drawTabTies joins them with an arc, like Songsterr.
+      n.__strIndex = {};
+      positions.forEach((p, idx) => { n.__strIndex[p.str] = idx; });
+      n.__tieStrings = positions.filter(p => p.__gn && p.__gn.tie).map(p => p.str);
     }
     tickables.push(n);
     if (t.tupId != null) {
@@ -784,6 +797,40 @@ function drawTies(ctx, built) {
   ctx.restore();
 }
 
+// Draw tab ties across the whole row. A TabNote position flagged gn.tie is a
+// CONTINUATION — held from the previous note on the same string, not re-picked —
+// so we arc back to that prior same-string note (even across a bar line), the way
+// Songsterr connects a held fret. Run after every measure in the row is drawn so
+// both endpoints have x positions.
+function drawTabTies(ctx, built) {
+  const seq = [];
+  for (const b of built) for (const n of b.notes) seq.push(n);
+  ctx.save();
+  ctx.setStrokeStyle(NOTE_COLOR);
+  ctx.setFillStyle(NOTE_COLOR);
+  for (let i = 0; i < seq.length; i++) {
+    const cont = seq[i];
+    if (!cont.__tieStrings || !cont.__tieStrings.length) continue;
+    for (const str of cont.__tieStrings) {
+      // The held note is the nearest earlier note that played this string.
+      let prev = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (seq[j].__isRest) continue;
+        if (seq[j].__strIndex && str in seq[j].__strIndex) { prev = seq[j]; break; }
+        if (seq[j].__strIndex) break;   // a note that doesn't use this string interrupts the hold
+      }
+      if (!prev) continue;
+      try {
+        new VF.TabTie({
+          first_note: prev, last_note: cont,
+          first_indices: [prev.__strIndex[str]], last_indices: [cont.__strIndex[str]],
+        }).setContext(ctx).draw();
+      } catch (e) { console.warn('[tabtie] draw failed str', str, e); }
+    }
+  }
+  ctx.restore();
+}
+
 // Build one measure's renderables once (tickables, voice, tuplets, min width).
 // Pulled out of renderRow so the score can be measured for line-breaking before
 // any row is laid out. Tuplet objects are created here (not at draw time) so
@@ -811,12 +858,20 @@ function buildMeasure(m, lyrics) {
       minW = new VF.Formatter().preCalculateMinTotalWidth([voice]);
     } catch (e) { console.warn('minwidth failed m', m.index, e); }
 
-    // Floor the bar's min width by its note count (~26px each: a notehead plus the
-    // breathing room a 16th run needs to not cram). This makes the packer give a
-    // dense bar (e.g. Come As You Are bar 27 — three 8ths then an eleven-note 16th
-    // run) enough width, taking FEWER bars per row rather than crowding. Sparse
-    // bars have few notes so the floor doesn't bind and the spacious look is kept.
-    minW = Math.max(minW, notes.length * 26);
+    // Floor the bar's min width by its note count so a dense run gets room rather
+    // than cramming (the packer then takes FEWER bars per row). Sparse bars don't
+    // bind the floor and keep the spacious look.
+    //   • Drums: ~26px per tickable (a notehead + a 16th run's breathing room).
+    //   • Tab: fret NUMBERS are wider than noteheads — a 2/4 bar of 32nd-note frets
+    //     (e.g. the Square Hammer intro run "12 10 8 6 4 2 1 0") cram badly at 26.
+    //     Reserve ~30px per single-digit fret and ~42px per two-digit one.
+    if (IS_TAB) {
+      let floor = 0;
+      for (const n of notes) floor += n.__isRest ? 14 : (n.__wide ? 42 : 30);
+      minW = Math.max(minW, floor);
+    } else {
+      minW = Math.max(minW, notes.length * 26);
+    }
   }
   return { m, notes, voice, minW, tuplets };
 }
@@ -1095,14 +1150,37 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     for (const n of notes) { if (n.__ann) n.__ann.text = ''; }
 
     if (IS_TAB) {
-      // Tab path: draw the fret numbers only. No stems/beams/accent band/flat-
-      // bottom stems — those are the drum engraving. Proportional spacing + the
-      // moving cursor carry the rhythm; tuplet brackets still draw. (Stems, beams,
-      // and slide/bend/harmonic glyphs are Phase 2 — see memory.)
+      // Rhythm strip below the tab (Songsterr-style): each note carries a downward
+      // stem + flag so its value reads at a glance; contiguous beamable notes (8th
+      // and shorter) are joined by beams, breaking at rests and longer notes. This
+      // is the "I can't tell the note value from bare numbers" fix.
+      const beamable = new Set(['8', '16', '32', '64']);
+      const beams = [];
+      let run = [];
+      const flushRun = () => {
+        if (run.length >= 2) { try { beams.push(new VF.Beam(run)); } catch (e) { console.warn('tab beam m', m.index, e); } }
+        run = [];
+      };
+      for (const n of notes) {
+        const dur = n.getDuration && n.getDuration();
+        if (!n.__isRest && !n.__tuplet && beamable.has(dur)) run.push(n);
+        else flushRun();
+      }
+      flushRun();
+      for (const tp of tuplets) {
+        const tn = tp.notes.filter(n => !n.__isRest && beamable.has(n.getDuration && n.getDuration()));
+        if (tn.length >= 2) { try { beams.push(new VF.Beam(tn)); } catch (e) { console.warn('tab tbeam m', m.index, e); } }
+      }
       ctx.setFillStyle(NOTE_COLOR);
       ctx.setStrokeStyle(NOTE_COLOR);
       ctx.setLineWidth(NOTE_LINE_WIDTH);
+      for (const n of notes) { if (n.setStemStyle) n.setStemStyle({ strokeStyle: STEM_COLOR, lineWidth: STEM_WIDTH }); }
+      for (const b of beams) {
+        if (b.render_options) b.render_options.beam_width = BEAM_WIDTH;
+        b.setStyle({ fillStyle: BEAM_COLOR, strokeStyle: BEAM_COLOR });
+      }
       voice.draw(ctx, stave);
+      for (const b of beams) { try { b.setContext(ctx).draw(); } catch (e) { console.warn('tab beam draw m', m.index, e); } }
       if (tuplets && tuplets.length) {
         ctx.save();
         ctx.setFillStyle(SECTION_COLOR);
@@ -1202,7 +1280,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     }
   }
 
-  if (!IS_TAB) drawTies(ctx, built);   // tab ties (same-string) are Phase 2
+  if (IS_TAB) drawTabTies(ctx, built); else drawTies(ctx, built);
 
   drawRowLyrics(ctx, baselineY, rowLyrics);
 
