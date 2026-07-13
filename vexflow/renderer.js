@@ -1605,6 +1605,7 @@ function renderScore(score, container, opts) {
   if (IS_TAB) renderTuningKey(score, container);
   else if (wantRoadmap) renderRoadmap(score, container);
   else renderDrumKey(score, container);
+  if (!IS_TAB) renderPerformanceNotes(score, container);
 }
 
 // Tab legend: the open-string tuning, low→high, named (the tab equivalent of the
@@ -1782,6 +1783,32 @@ function renderDrumKey(score, container) {
       console.error('drumkey', ent, e);
     }
   }
+  container.appendChild(wrap);
+}
+
+// Optional free-text performance notes below the drum key — fill options, a
+// grip/technique tip, "swing 8ths", brushes, etc. Rendered only when the score
+// carries a `performance_notes` (string, or array of lines with the first line
+// used as a lead); absent on every other song, so nothing changes for them.
+// Plain text (textContent), so score data can't inject markup.
+function renderPerformanceNotes(score, container) {
+  const raw = score.performance_notes;
+  if (!raw) return;
+  const lines = Array.isArray(raw) ? raw.filter(Boolean) : [String(raw)];
+  if (!lines.length) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'perfnotes';
+  const title = document.createElement('div');
+  title.className = 'perfnotes-title';
+  title.textContent = 'Performance notes';
+  wrap.appendChild(title);
+  lines.forEach((ln, i) => {
+    const div = document.createElement('div');
+    div.className = i === 0 ? 'perfnotes-lead' : 'perfnotes-line';
+    div.textContent = ln;
+    wrap.appendChild(div);
+  });
   container.appendChild(wrap);
 }
 
