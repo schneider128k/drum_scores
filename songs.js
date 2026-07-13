@@ -232,6 +232,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000001_2",
+    "song_id": 9000001,
+    "part_id": 2,
+    "instrument": "drums",
+    "artist": "Horace Silver",
+    "title": "Song For My Father",
+    "name": "Drums | Skeleton + fills (bars 8/16/24) | Latin",
+    "lyrics": true
+  },
+  {
     "id": "11053_9",
     "song_id": 11053,
     "part_id": 9,
