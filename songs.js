@@ -112,6 +112,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000002_1",
+    "song_id": 9000002,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "Duke Ellington",
+    "title": "Satin Doll",
+    "name": "Drums | Basic swing groove (teacher) | Medium Swing",
+    "lyrics": true
+  },
+  {
     "id": "86505_7",
     "song_id": 86505,
     "part_id": 7,
