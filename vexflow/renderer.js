@@ -59,6 +59,13 @@ let SCORE_REF = null;         // kept so a resize can re-render responsively
 // runs byte-for-byte as before.
 let INSTRUMENT = 'drums';
 let IS_TAB = false;
+// Jazz two-voice engraving. OFF by default: rock/metal drum scores keep the
+// single-voice, all-stems-down Songsterr look. A score sets `split_stems: true`
+// to get the traditional jazz layout instead — cymbal voice (ride, hi-hat,
+// crash, bell) stems UP with beams above the staff, kit voice (snare, toms,
+// kick, hi-hat foot) stems DOWN with beams below. A chord holding both stems up,
+// since it reads as one unison hit.
+let SPLIT_STEMS = false;
 let TUNING = null;            // MIDI numbers high→low (tab only)
 let NUM_LINES = 5;            // tab stave line count = TUNING.length
 // Cursor clock estimator: a type-2 (PI) tracking loop that fuses the quantised,
@@ -292,6 +299,18 @@ function largestDurLE(gap) {
 function buildMeasureTickables(measure) {
   const mPos = measure.position;
 
+  // Simile bar ("play the previous bar again"). The book engraving for a steady
+  // groove: write the pattern once, then mark the repeats with % instead of
+  // re-printing every notehead. We still need a tickable so the bar reserves its
+  // width and the formatter is happy — an invisible whole rest does that, and
+  // renderRow paints the % glyph over the top.
+  if (measure.simile) {
+    const r = new VF.StaveNote({ keys: ['b/4'], duration: 'wr' });
+    r.setStyle({ fillStyle: 'transparent', strokeStyle: 'transparent' });
+    r.__accent = 0;
+    return { tickables: [r], tuplets: [] };
+  }
+
   // Partition events: tuplet members (grouped by tuplet_group, rests kept — they
   // fill the bracket) vs plain note events (stretched).
   const groups = new Map();   // gid -> { members:[{rel,ev}], n, m }
@@ -386,7 +405,13 @@ function buildMeasureTickables(measure) {
     } else {
       const chord = chordFromNotes(t.notes);
       const keys = chord.map(c => c.key);
-      n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: -1 });
+      // Stem direction. Single-voice default: always down. In split-stem (jazz)
+      // mode an event goes stem-up if it carries ANY cymbal-voice piece, so the
+      // ride line floats above and the kit hangs below.
+      const hasCymbal = t.notes.some(dn => (DRUM_MAP[dn.lily] || {}).voice === 1);
+      const stemDir = (SPLIT_STEMS && hasCymbal) ? 1 : -1;
+      n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: stemDir });
+      n.__stemUp = stemDir === 1;
       for (let k = 0; k < t.dots; k++) VF.Dot.buildAndAttach([n], { all: true });
 
       // Ghost notes: render the notehead in grey instead of parenthesising it —
@@ -655,6 +680,7 @@ const NARROW_BP = 700;       // px: container narrower than this is treated as a
 const SIDE_MARGIN = 10;
 const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
+const BEAM_RISE = 30;        // px above the top staff line for the split-stem cymbal beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
 const PRINT_LYRIC_GAP = 16;  // print pulls the lyric line up a touch so the taller staff +
@@ -1294,6 +1320,34 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       yTop: stave.getYForLine(0),
       yBottom: stave.getYForLine(BOTTOM_LINE),
     });
+
+    // Simile bar: paint the % repeat glyph across the middle of the staff, plus
+    // the book's little bar-position counter above it. The bar's only "note" is
+    // an invisible whole rest, so nothing else draws here.
+    if (m.simile) {
+      const cx = x + myWidth / 2;
+      const cy = (stave.getYForLine(1) + stave.getYForLine(3)) / 2;
+      ctx.save();
+      ctx.setFillStyle(NOTE_COLOR);
+      ctx.setStrokeStyle(NOTE_COLOR);
+      ctx.setLineWidth(3.2);
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy + 10);
+      ctx.lineTo(cx + 8, cy - 10);
+      ctx.stroke();
+      for (const d of [[-7, -6], [7, 6]]) {
+        ctx.beginPath();
+        ctx.arc(cx + d[0], cy + d[1], 2.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (m.simile_count) {
+        ctx.setFont('Georgia', 11, 'normal', 'italic');
+        ctx.setFillStyle(SECTION_COLOR);
+        const lbl = '(' + m.simile_count + ')';
+        ctx.fillText(lbl, cx - ctx.measureText(lbl).width / 2, stave.getYForLine(0) - 12);
+      }
+      ctx.restore();
+    }
     x += myWidth;
 
     if (!voice) continue;
@@ -1375,16 +1429,37 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       stem_direction: -1, beam_rests: false, flat_beams: true,
       flat_beam_offset: stave.getYForLine(4) + BEAM_DROP,
     };
+    // Split-stem mode needs a second beam line above the staff for the cymbal voice.
+    const beamOptsUp = {
+      stem_direction: 1, beam_rests: false, flat_beams: true,
+      flat_beam_offset: stave.getYForLine(0) - BEAM_RISE,
+    };
+    // Beam a run of same-direction notes with the matching options. In split-stem
+    // mode a bar alternates between voices (ride ... then a snare fill), so beam
+    // each CONTIGUOUS same-direction run on its own — filtering the whole bar by
+    // direction instead would beam a beat-2 ride to a beat-4 ride straight across
+    // the fill sitting between them.
+    const beamRuns = (seq) => {
+      const list = seq.filter(n => !(n.isRest && n.isRest()));
+      if (!SPLIT_STEMS) return VF.Beam.generateBeams(list, beamOpts);
+      let out = [];
+      let i = 0;
+      while (i < list.length) {
+        const up = !!list[i].__stemUp;
+        let j = i;
+        while (j < list.length && !!list[j].__stemUp === up) j++;
+        out = out.concat(VF.Beam.generateBeams(list.slice(i, j), up ? beamOptsUp : beamOpts));
+        i = j;
+      }
+      return out;
+    };
     let beams = [];
     try {
       // Beam the plain notes together; beam each tuplet group on its OWN notes so
       // a triplet's members beam as a clean unit and never merge with their
       // neighbours (the stray-flag mess in the first tuplet attempt).
-      beams = VF.Beam.generateBeams(notes.filter(n => !n.__tuplet), beamOpts);
-      for (const tp of tuplets) {
-        beams = beams.concat(
-          VF.Beam.generateBeams(tp.notes.filter(n => !(n.isRest && n.isRest())), beamOpts));
-      }
+      beams = beamRuns(notes.filter(n => !n.__tuplet));
+      for (const tp of tuplets) beams = beams.concat(beamRuns(tp.notes));
     } catch (e) { console.warn('beam failed m', m.index, e); }
 
     // Reset the context to dark after the grey stave so note heads stay dark,
@@ -1409,11 +1484,19 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // same line so every stem bottoms out uniformly — the Songsterr look, and
     // the fix for the "stem that doesn't connect" report.
     const yFlat = stave.getYForLine(4) + BEAM_DROP;
+    const yFlatUp = stave.getYForLine(0) - BEAM_RISE;
     for (const n of notes) {
       if ((n.isRest && n.isRest()) || (n.hasBeam && n.hasBeam()) || !n.setStemLength) continue;
       try {
-        const topY = Math.min.apply(null, n.getYs());
-        if (yFlat - topY > 0) n.setStemLength(yFlat - topY);
+        if (n.__stemUp) {
+          // Mirror image for the cymbal voice: run every unbeamed stem UP to the
+          // same line the split-stem beams sit on.
+          const botY = Math.max.apply(null, n.getYs());
+          if (botY - yFlatUp > 0) n.setStemLength(botY - yFlatUp);
+        } else {
+          const topY = Math.min.apply(null, n.getYs());
+          if (yFlat - topY > 0) n.setStemLength(yFlat - topY);
+        }
       } catch (_) { /* no Y-values — keep the default stem */ }
     }
 
@@ -1498,6 +1581,8 @@ function renderScore(score, container, opts) {
   // (rows, spacing, cursor, lyrics) is shared.
   INSTRUMENT = score.instrument || 'drums';
   IS_TAB = INSTRUMENT !== 'drums';
+  // Jazz two-voice engraving, opt-in per score. Never on for tab.
+  SPLIT_STEMS = !IS_TAB && !!score.split_stems;
   TUNING = score.tuning || null;
   NUM_LINES = (IS_TAB && TUNING && TUNING.length) ? TUNING.length : (IS_TAB ? 6 : 5);
   const measures = score.measures;
