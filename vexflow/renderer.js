@@ -304,7 +304,12 @@ function buildMeasureTickables(measure) {
   // re-printing every notehead. We still need a tickable so the bar reserves its
   // width and the formatter is happy — an invisible whole rest does that, and
   // renderRow paints the % glyph over the top.
-  if (measure.simile) {
+  //
+  // A `blank` bar takes the same empty-but-sized path and draws NOTHING at all:
+  // ruled staff, barlines, bar number, and open space. That is a WORKSHEET bar —
+  // the chart says a bar happens here and deliberately leaves what to play to the
+  // player (or, on a lesson chart, to the teacher's pencil).
+  if (measure.simile || measure.blank) {
     const r = new VF.StaveNote({ keys: ['b/4'], duration: 'wr' });
     r.setStyle({ fillStyle: 'transparent', strokeStyle: 'transparent' });
     r.__accent = 0;
@@ -682,6 +687,16 @@ const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
 const BEAM_RISE = 30;        // px above the top staff line for the split-stem cymbal beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
+// Under `split_stems` the cymbal voice stems and beams UP, into exactly the band the
+// accents live in — a ">" then lands on a beam or a flag and the two smear together.
+// So for those scores the whole top stack lifts: accents clear the up-beam, and the
+// measure-number / section-label line clears the accents. Rock scores (stems down,
+// nothing above the staff but accents) keep the tight original spacing.
+const SPLIT_ACCENT_RISE = BEAM_RISE + 20;   // = 50: above the up-beam and its width
+const SPLIT_LABEL_RISE = BEAM_RISE + 42;    // = 72: above the lifted accent glyphs
+// Set per score by renderScore(); these are the values every draw call reads.
+let ACCENT_Y_RISE = ACCENT_RISE;
+let LABEL_Y_RISE = SECTION_RISE;
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
 const PRINT_LYRIC_GAP = 16;  // print pulls the lyric line up a touch so the taller staff +
                              // lyrics still fit one row box (keeps the page count steady)
@@ -739,7 +754,7 @@ const HEAD_OVERHANG = 6;
 // Draw accents as one uniform band above the staff (Songsterr style), instead
 // of per-note articulations that bob up and down with the chord height.
 function drawAccentBand(ctx, stave, notes) {
-  const y = stave.getYForLine(0) - ACCENT_RISE;
+  const y = stave.getYForLine(0) - ACCENT_Y_RISE;
   ctx.save();
   ctx.setFont('Arial', 13, 'bold');
   ctx.setFillStyle(ACCENT_COLOR);
@@ -1258,7 +1273,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       ctx.setFillStyle(SECTION_COLOR);
       const label = '' + m.index;
       const w = ctx.measureText(label).width;
-      ctx.fillText(label, stave.getX() - w / 2, stave.getYForLine(0) - MEASURE_NUM_RISE);
+      ctx.fillText(label, stave.getX() - w / 2, stave.getYForLine(0) - LABEL_Y_RISE);
       mNumRight = stave.getX() + w / 2;
       ctx.restore();
     }
@@ -1275,7 +1290,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       if (rowStartPos === null) {
         rowStartPos = mStart;
         rowStartX = stave.getNoteStartX();
-        rowYTop = stave.getYForLine(0) - ACCENT_RISE - 4;
+        rowYTop = stave.getYForLine(0) - ACCENT_Y_RISE - 4;
         rowYBottom = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
       }
       rowEndPos = mEnd;
@@ -1284,11 +1299,17 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
 
     // Section label (Intro / Verse 1 / Chorus …) drawn by hand for colour control:
     // grey italic, in the top band, starting past the measure number so they never clash.
-    if (m.marker) {
+    // `label` is the same text in the same band but WITHOUT a section's side effects —
+    // no forced line break, no entry in the road map. It names a single bar ("Fill",
+    // "Solo") inside a section that is already running.
+    let topTextX = topBandX;
+    for (const t of [m.marker, m.label]) {
+      if (!t) continue;
       ctx.save();
       ctx.setFont(...SECTION_FONT);
       ctx.setFillStyle(SECTION_COLOR);
-      ctx.fillText(m.marker, topBandX, stave.getYForLine(0) - SECTION_RISE);
+      ctx.fillText(t, topTextX, stave.getYForLine(0) - LABEL_Y_RISE);
+      topTextX += ctx.measureText(t).width + 12;
       ctx.restore();
     }
 
@@ -1302,9 +1323,8 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     const prevM = measureByIndex(m.index - 1);
     if (!prevM || prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1]) {
       ctx.save();
-      let mx = topBandX;   // start past the measure number
-      const my = stave.getYForLine(0) - SECTION_RISE;
-      if (m.marker) { ctx.setFont(...SECTION_FONT); mx += ctx.measureText(m.marker).width + 12; }  // sit after the section label if both
+      const mx = topTextX;   // past the measure number and any section/bar label
+      const my = stave.getYForLine(0) - LABEL_Y_RISE;
       ctx.setFont('Georgia', 12, 'normal', 'italic');
       ctx.setFillStyle(SECTION_COLOR);
       ctx.fillText(m.time_sig.join('/'), mx, my);
@@ -1583,6 +1603,10 @@ function renderScore(score, container, opts) {
   IS_TAB = INSTRUMENT !== 'drums';
   // Jazz two-voice engraving, opt-in per score. Never on for tab.
   SPLIT_STEMS = !IS_TAB && !!score.split_stems;
+  // Up-stem beams share the space above the staff, so the accent band and the
+  // number/label line both move up out of their way (see SPLIT_ACCENT_RISE).
+  ACCENT_Y_RISE = SPLIT_STEMS ? SPLIT_ACCENT_RISE : ACCENT_RISE;
+  LABEL_Y_RISE = SPLIT_STEMS ? SPLIT_LABEL_RISE : SECTION_RISE;
   TUNING = score.tuning || null;
   NUM_LINES = (IS_TAB && TUNING && TUNING.length) ? TUNING.length : (IS_TAB ? 6 : 5);
   const measures = score.measures;
@@ -1606,8 +1630,14 @@ function renderScore(score, container, opts) {
   // or the lyric baseline falls past the row's SVG viewBox and gets clipped (the
   // "Living in the night" lyrics were drawn off-canvas). Add headroom for tab.
   const TAB_ROW_EXTRA = 56;
-  const rowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0);
-  const rowTop = print ? PRINT_ROW_TOP : ROW_TOP;
+  // A split-stem score's top stack (up-beams → accents → numbers/labels) is taller
+  // than the default headroom, so push the staff down by exactly what we lifted the
+  // label line and give the row box the same amount back — otherwise the labels of
+  // the first row clip against the top of the SVG and later rows collide.
+  const TOP_STACK_EXTRA = LABEL_Y_RISE - SECTION_RISE;
+  const rowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT)
+    + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
+  const rowTop = (print ? PRINT_ROW_TOP : ROW_TOP) + TOP_STACK_EXTRA;
 
   // Build every measure once, then greedily pack bars into a row until the next bar
   // would push the row past ROW_BEATS quarter-note beats, with a forced break before
