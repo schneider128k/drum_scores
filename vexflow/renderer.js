@@ -661,10 +661,11 @@ const MEASURE_NUM_RISE = 42;   // = SECTION_RISE: numbers and section labels sha
 // lyric baseline], so for print we shift it up (smaller top inset) and crop the SVG
 // canvas just below the lyric line — cutting the empty headroom that caused the wide
 // gaps, without clipping section labels (top) or lyrics/beams (bottom).
-const PRINT_ROW_TOP = 16;       // the taller staff already gains label headroom (VexFlow's
-                                // internal top padding scales with line spacing), so no bump.
-const PRINT_ROW_HEIGHT = 188;   // unchanged: the bigger staff fills the slack between rows,
-                                // so rows-per-page (and total pages) stay about the same.
+const PRINT_ROW_TOP = 2;        // the taller staff already gains label headroom (VexFlow's
+                                // internal top padding scales with line spacing), so the row
+                                // box only needs a hairline above the section-label line.
+const PRINT_ROW_HEIGHT = 188;   // TAB scores only — drum/print rows now size themselves to
+                                // their inked height (see printRowHeight in renderScore).
 // Print spreads the five staff lines further apart than the screen's 10px. On paper the
 // vertical POSITION is what distinguishes kick/snare/tom/cymbal (they share an oval head),
 // so wider lanes = faster sight-reading — the honest "a bit larger" lever when 4-bars-fill-
@@ -685,6 +686,12 @@ const NARROW_BP = 700;       // px: container narrower than this is treated as a
 const SIDE_MARGIN = 10;
 const ACCENT_RISE = 26;      // px above the top staff line for the accent band
 const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
+// Print sets the staff lines further apart (PRINT_LINE_SPACING), so 35px below the
+// bottom line is a bigger gap in staff-space terms than it is on screen — pull the
+// beam band in a little. Every px here is a px off EVERY row's height, which is what
+// decides how many systems fit a page.
+const PRINT_BEAM_DROP = 29;
+const beamDrop = () => (IS_PRINT ? PRINT_BEAM_DROP : BEAM_DROP);
 const BEAM_RISE = 30;        // px above the top staff line for the split-stem cymbal beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
 // Under `split_stems` the cymbal voice stems and beams UP, into exactly the band the
@@ -1260,7 +1267,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     }
     stave.setContext(ctx).draw();
     if (rowTopLineY === null) rowTopLineY = stave.getYForLine(0);
-    baselineY = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
+    baselineY = stave.getYForLine(BOTTOM_LINE) + beamDrop() + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP);
 
     // Measure number — hand-drawn in the top annotation band (NOT VexFlow's built-in,
     // which sits at notehead height and collides with a high downbeat/"+ of 4" crash or
@@ -1291,7 +1298,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
         rowStartPos = mStart;
         rowStartX = stave.getNoteStartX();
         rowYTop = stave.getYForLine(0) - ACCENT_Y_RISE - 4;
-        rowYBottom = stave.getYForLine(BOTTOM_LINE) + BEAM_DROP + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
+        rowYBottom = stave.getYForLine(BOTTOM_LINE) + beamDrop() + (IS_PRINT ? PRINT_LYRIC_GAP : LYRIC_GAP) + 4;
       }
       rowEndPos = mEnd;
       rowEndX = stave.getNoteEndX();
@@ -1447,7 +1454,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // individual flags at draw time.
     const beamOpts = {
       stem_direction: -1, beam_rests: false, flat_beams: true,
-      flat_beam_offset: stave.getYForLine(4) + BEAM_DROP,
+      flat_beam_offset: stave.getYForLine(4) + beamDrop(),
     };
     // Split-stem mode needs a second beam line above the staff for the cymbal voice.
     const beamOptsUp = {
@@ -1503,7 +1510,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // disconnected next to the long beamed stems. Extend each one down to that
     // same line so every stem bottoms out uniformly — the Songsterr look, and
     // the fix for the "stem that doesn't connect" report.
-    const yFlat = stave.getYForLine(4) + BEAM_DROP;
+    const yFlat = stave.getYForLine(4) + beamDrop();
     const yFlatUp = stave.getYForLine(0) - BEAM_RISE;
     for (const n of notes) {
       if ((n.isRest && n.isRest()) || (n.hasBeam && n.hasBeam()) || !n.setStemLength) continue;
@@ -1635,9 +1642,23 @@ function renderScore(score, container, opts) {
   // label line and give the row box the same amount back — otherwise the labels of
   // the first row clip against the top of the SVG and later rows collide.
   const TOP_STACK_EXTRA = LABEL_Y_RISE - SECTION_RISE;
-  const rowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT)
-    + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
   const rowTop = (print ? PRINT_ROW_TOP : ROW_TOP) + TOP_STACK_EXTRA;
+  // Print crops each row to what it actually INKS instead of a fixed box: the SVG's
+  // unused bottom band is the white space you see between systems on the page, and a
+  // score with no lyrics was still reserving the lyric line. Measured off the same
+  // geometry the drawing uses — VexFlow's headroom inside the stave (4 line-spaces
+  // above line 0) + the staff itself + the flat beam band below it (+ the lyric line
+  // only where there are lyrics) + a hair of clearance. Tab rows keep the old fixed
+  // box (their stems/lyrics stack differently); screen is untouched.
+  const printRowHeight = () => {
+    const sp = PRINT_LINE_SPACING;
+    const hasLyrics = !!(lyrics && lyrics.length);
+    return Math.round(rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
+      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 6));
+  };
+  const rowHeight = (print && !IS_TAB)
+    ? printRowHeight()
+    : (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
 
   // Build every measure once, then greedily pack bars into a row until the next bar
   // would push the row past ROW_BEATS quarter-note beats, with a forced break before
@@ -1692,10 +1713,25 @@ function renderScore(score, container, opts) {
   // 6/4 run) fill proportionally less and sit left-aligned, so columns align across rows.
   const fullRowWeight = barsPerRow;
 
+  // Rows that belong to the same SECTION go into one wrapper so print can keep them
+  // together (`.section-group { break-inside: avoid }`): an 8-bar A section is two
+  // stacked rows, and having its second half land on the next page is exactly the
+  // page turn you cannot make mid-tune. A row opens a new group when its first
+  // measure carries a marker; anything before the first marker forms a lead group.
+  // On screen the wrappers are inert (plain blocks), so nothing else changes.
+  let group = null;
+  const newGroup = () => {
+    group = document.createElement('div');
+    group.className = 'section-group';
+    container.appendChild(group);
+    return group;
+  };
+
   rows.forEach((rowBuilt, idx) => {
+    if (!group || rowBuilt[0].m.marker) newGroup();
     const rowDiv = document.createElement('div');
     rowDiv.className = 'row';
-    container.appendChild(rowDiv);
+    group.appendChild(rowDiv);
     const rowWeight = rowBuilt.reduce((s, b) => s + weightOf(b.m), 0);
     // Width is proportional to the row's musical TIME, so the bar widths honestly reflect
     // the meter: a row that carries a 2/4 bar holds less time than four 4/4 bars and is

@@ -149,6 +149,10 @@
       #cursor-bar { display: none !important; }
       #score { width: 100%; margin: 0; padding: 0; }
       .row { break-inside: avoid; page-break-inside: avoid; }
+      /* A section (its rows wrapped by renderer.js) never splits across a page —
+         the second half of an 8-bar A landing overleaf is a page turn you cannot
+         make mid-tune. Costs at most a little white space at the foot of a page. */
+      .section-group { break-inside: avoid; page-break-inside: avoid; }
       /* The roadmap (renderer.js) replaces the old print-header as the page-1 overview. */
       #print-header { display: none !important; }
 
