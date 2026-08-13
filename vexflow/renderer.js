@@ -690,7 +690,7 @@ const BEAM_DROP = 35;        // px below the bottom staff line for the flat beam
 // bottom line is a bigger gap in staff-space terms than it is on screen — pull the
 // beam band in a little. Every px here is a px off EVERY row's height, which is what
 // decides how many systems fit a page.
-const PRINT_BEAM_DROP = 29;
+const PRINT_BEAM_DROP = 26;
 const beamDrop = () => (IS_PRINT ? PRINT_BEAM_DROP : BEAM_DROP);
 const BEAM_RISE = 30;        // px above the top staff line for the split-stem cymbal beam
 const SECTION_RISE = 42;     // px above the top staff line for the section label
@@ -699,8 +699,8 @@ const SECTION_RISE = 42;     // px above the top staff line for the section labe
 // So for those scores the whole top stack lifts: accents clear the up-beam, and the
 // measure-number / section-label line clears the accents. Rock scores (stems down,
 // nothing above the staff but accents) keep the tight original spacing.
-const SPLIT_ACCENT_RISE = BEAM_RISE + 20;   // = 50: above the up-beam and its width
-const SPLIT_LABEL_RISE = BEAM_RISE + 42;    // = 72: above the lifted accent glyphs
+const SPLIT_ACCENT_RISE = BEAM_RISE + 16;   // = 46: above the up-beam and its width
+const SPLIT_LABEL_RISE = BEAM_RISE + 32;    // = 62: above the lifted accent glyphs
 // Set per score by renderScore(); these are the values every draw call reads.
 let ACCENT_Y_RISE = ACCENT_RISE;
 let LABEL_Y_RISE = SECTION_RISE;
@@ -1654,7 +1654,7 @@ function renderScore(score, container, opts) {
     const sp = PRINT_LINE_SPACING;
     const hasLyrics = !!(lyrics && lyrics.length);
     return Math.round(rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
-      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 6));
+      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4));
   };
   const rowHeight = (print && !IS_TAB)
     ? printRowHeight()
