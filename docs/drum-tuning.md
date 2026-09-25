@@ -1,5 +1,17 @@
 # 🥁 Drum Tuning Cheat Sheet
 
+Two setups, two parts:
+
+- **[Part 1: Regular drum heads](#part-1-regular-drum-heads)**, the normal
+  kit. It also covers practising quietly with **RTOM Black Hole snap-on pads**
+  on top.
+- **[Part 2: Remo Silentstroke low-volume heads](#part-2-remo-silentstroke-low-volume-heads)**,
+  where the regular batter heads have been *replaced* by mesh heads.
+
+---
+
+# Part 1: Regular drum heads
+
 ## The golden rules
 
 1. **Start even.** Back every rod off, then spin each one down until it just
@@ -16,8 +28,6 @@
 5. **One head at a time.** Mute the head you're not tuning (see each drum
    below).
 6. **New heads stretch.** Re-check after the first couple of sessions.
-
----
 
 ## 1. Snare
 
@@ -65,8 +75,6 @@
   past finger-tight, to push the note out front. Press gently at most. If it
   has a port hole, it will sustain less and mic up more easily.
 
----
-
 ## Fine-tuning ("clearing") a head
 
 1. Mute the other head, then rest a finger lightly in the **center** of the head
@@ -86,3 +94,80 @@
 | Dead, cardboard tom | Too loose, or the head is worn out. Tighten both heads evenly, or replace |
 | Snare sounds choked | Loosen the snare-side head a little, or back off the strainer |
 | Kick sounds "basketball" | Batter is too tight. Back it down toward J.A.W. |
+
+## Option: quiet practice with RTOM Black Hole snap-on pads
+
+The Black Hole is a mesh pad on a rubber hoop that **snaps on over the
+existing head**. You don't take anything off, and your tuning underneath stays
+as it is.
+
+1. **Tune the drum first** (everything above), *then* snap the pad on. Pull it
+   off to play the real sound; the tuning underneath doesn't change.
+2. **Snap-on:** press it down over the hoop all the way around. On die-cast or
+   wooden hoops it may not grip well. RTOM sells elastic hook attachments for
+   that.
+3. **Pad tension = feel, not pitch.** Each pad has its own tensioner: a
+   turnbuckle under the rubber hoop, turned with the small key that comes with
+   it. Set it for the rebound you want, ideally close to how the real head
+   feels, so practice carries over.
+4. **Snare:** the wires still respond through the pad, so leave them on
+   if you want some snare sound. Throw them off for near-silence.
+5. **Kick:** there's a Black Hole for the bass drum too. Set its tension so the
+   beater bounces like it does on the real head.
+
+---
+
+# Part 2: Remo Silentstroke low-volume heads
+
+Here the regular **batter heads are replaced** by Remo Silentstroke mesh
+heads. Tuning mesh is about **feel**, not pitch. Mesh barely has a note, so
+you're setting rebound and making it even.
+
+## The golden rules (mesh)
+
+1. **Same mechanics as Part 1.** Seat the head, start finger-tight, use the
+   star pattern and equal turns.
+2. **Tune by feel, not by ear.** Press a fingertip about 1″ in from each rod.
+   Every spot should give the same amount. Then play and judge the stick
+   rebound.
+3. **Small steps.** Start at about ½ turn past finger-tight per rod, then go
+   up in ⅛ or even 1/16 turns. It's easy to overshoot, and too tight makes
+   the drum choke to a dead "thud".
+4. **Two useful zones:**
+   - **Tighter:** more bounce and a bit more tone. Good for fast singles and
+     rolls.
+   - **Looser:** feels more like a relaxed acoustic kit, but less forgiving on
+     rebound.
+5. **Keep it level.** A mesh head that's tighter on one side feels lopsided
+   right away. Clearing the lugs by feel matters more than on a regular head.
+
+## Per drum
+
+- **Resonant heads (if you kept regular ones on the bottom):** the mesh moves
+  much less air, so a loose reso barely vibrates. Tune the resos **higher
+  than you normally would** to get any body out of the drum.
+- **Snare:** mesh on top, normal snare-side head underneath, wires on. Set the
+  snare-side head tight (as in Part 1) so the wires still react to the quieter
+  hits. Adjust the strainer to taste.
+- **Toms:** tune each one a little looser than the one above it, mostly
+  so the rebound changes smoothly around the kit.
+- **Kick:** tighten the mesh until the beater bounces off cleanly and doesn't
+  sink in. There's no J.A.W. here, because mesh doesn't wrinkle like film.
+
+## Quick fixes (mesh)
+
+| Problem | Try first |
+|---|---|
+| Stick sinks in, no bounce | Tighten evenly in ⅛ turns |
+| Choked "thud", feels like a board | Too tight. Back off every rod equally |
+| One side feels different | The lugs are uneven. Re-check each one by pressing 1″ from the rod |
+| Snare wires barely respond | Tighten the snare-side head or the strainer a little |
+
+---
+
+*Sources for the low-volume sections: RTOM's
+[Black Hole product page](https://rtom.com/store/low-volume-heads/black-hole-practice-system-individual-sizes/),
+and Silentstroke reviews and player reports
+([MusicRadar](https://www.musicradar.com/reviews/drums/remo-silent-stroke-mesh-drum-heads-611723),
+[DrumSilent](https://www.drumsilent.com/review-remo-silentstroke-drum-heads/),
+[Drumming Basics](https://www.drummingbasics.com/remo-silent-stroke-vs-pearl-mesh-heads/)).*
