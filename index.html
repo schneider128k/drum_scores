@@ -41,9 +41,19 @@
     }
 
     /* ── Search box ───────────────────────────────────────────── */
+    .searchrow { display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px; }
     .search {
-      position: relative; margin-bottom: 14px;
+      position: relative; flex: 1 1 auto; min-width: 0;
     }
+    .tuning-link {
+      flex: 0 0 auto; display: inline-flex; align-items: center;
+      font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none;
+      background: var(--panel); border: 1px solid var(--hair); border-radius: 12px;
+      padding: 0 16px; white-space: nowrap;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .tuning-link:hover { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+    @media (max-width: 480px) { .tuning-link .long { display: none; } .tuning-link { padding: 0 12px; } }
     .search svg {
       position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
       width: 18px; height: 18px; color: var(--muted); pointer-events: none;
@@ -243,6 +253,7 @@
       <cite class="quote-by">— Joey Jordison, Slipknot</cite>
     </blockquote>
 
+    <div class="searchrow">
     <div class="search" id="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -250,6 +261,9 @@
       <input id="q" type="search" inputmode="search" autocomplete="off" spellcheck="false"
              placeholder="Search artist or title…" aria-label="Search artist or title">
       <button class="clear" id="clear" type="button" aria-label="Clear search">×</button>
+    </div>
+    <a class="tuning-link" href="https://github.com/schneider128k/drum_scores/blob/main/docs/drum-tuning.md"
+       title="How to tune your drums">🥁&nbsp;Tuning<span class="long">&nbsp;guide</span></a>
     </div>
 
     <div class="viewbar">
@@ -265,7 +279,6 @@
 
     <div class="footer">
       Engraving: VexFlow · Audio: the song's official YouTube, beat-synced.<br>
-      Drums sounding off? <a href="https://github.com/schneider128k/drum_scores/blob/main/docs/drum-tuning.md">How to tune your drums →</a><br>
       Looking for the old grid &amp; sheet-music views? They live in the <a href="archive/index.html">archive</a>.<br>
       Part of the Slayer family · Play guitar too? <a href="https://schneider128k.github.io/guitar/">Fretslayer →</a>
     </div>
