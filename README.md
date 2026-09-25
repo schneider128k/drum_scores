@@ -36,6 +36,10 @@ the artist groupings, and the instrument filter all stay in sync as songs
 are added. Drums today; the layout already makes room for other
 instruments.
 
+## Drum tuning
+
+A quick reference for tuning the kit: [`docs/drum-tuning.md`](docs/drum-tuning.md).
+
 ## Archive
 
 The original grid and engraved-page views live under
