@@ -134,8 +134,20 @@ the one before it, like steps going down.
 
    Try both and trust your ears.
 4. **Smallest tom first.** Tune your smallest tom first, then each bigger tom
-   a bit lower. A good gap: hum the first two notes of **"Here Comes the
-   Bride"**. That's roughly how far apart neighbouring toms should sound.
+   a bit lower. How much lower? Use the "Here Comes the Bride" gap (see the
+   tip below).
+
+> 💡 **Teacher's tip: the "Here Comes the Bride" gap.** Hum the opening of the
+> wedding march: "*Here comes the bride…*". The jump from "**Here**" (low) to
+> "**comes**" (higher) is a good gap between two toms. (Musicians call it a
+> fourth.)
+> - Hit the smaller tom, then the bigger one. They should sound like "comes"
+>   going down to "Here".
+> - Sounds closer than that? Tune the bigger tom lower.
+> - Sounds further apart? Bring the bigger tom up a little.
+>
+> It's a starting point, not a rule. Some drummers space their toms a bit
+> closer. If it sounds good to you, it's right.
 
 ✅ **Test:** play a fill down the toms. It should sound like clear steps going
 down. If two toms sound almost the same, spread them apart.
