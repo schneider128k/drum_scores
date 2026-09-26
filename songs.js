@@ -512,6 +512,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "62923_9",
+    "song_id": 62923,
+    "part_id": 9,
+    "instrument": "drums",
+    "artist": "The Beatles",
+    "title": "Come Together",
+    "name": "Ringo Starr | Ludwig Hollywood Maple | Drums",
+    "lyrics": true
+  },
+  {
     "id": "431_5",
     "song_id": 431,
     "part_id": 5,
