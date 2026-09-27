@@ -13,6 +13,10 @@ There are two parts. Read the one that matches your kit today:
 - **[Part 2: Remo Silentstroke low-volume heads](#part-2-remo-silentstroke-low-volume-heads).**
   The top heads have been swapped for quiet mesh heads.
 
+Want it on paper? The **[one-page printable tuning sheet](https://schneider128k.github.io/drum_scores/docs/tuning-sheet.html)**
+has the by-ear steps, typical turn counts and a table for writing down your own
+turn counts. Open it and print it from your browser.
+
 ### What you need
 
 - A **drum key**
