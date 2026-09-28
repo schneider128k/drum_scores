@@ -119,6 +119,83 @@ ghost notes.
 "tss" from the wires. Then play a hard backbeat: a big crack with no loose
 rattle afterward.
 
+> 💡 **Teacher's tip:** A short metallic ring right after each hit is normal.
+> That's the wires and the shell, and it's part of the snare sound. Only a
+> ring that keeps going, or a separate rattle or click, needs fixing.
+
+### The snare wires: taking them off and putting them back
+
+To tune the bottom head properly, the wires have to come out of the way.
+Putting them back is where most people get stuck, so here is the whole thing.
+
+**The parts**
+
+- **Wires:** the bundle of thin coiled strands.
+- **End plates:** the metal strips at each end of the wires, each with a cloth
+  (or plastic) strap attached.
+- **Slots in the bottom hoop:** two cut-outs on opposite sides of the drum,
+  called **snare gates**. The straps go *through* these.
+- **Strainer:** the side with the ON/OFF lever and the tension knob. The strap
+  is clamped between two small plates tightened by a screw.
+- **Butt plate:** the fixed clamp on the other side. It has no lever.
+
+**How it looks when it's right** (drum upside down):
+
+```
+   strainer                                        butt plate
+   (lever)                                         (fixed)
+     ▌                                                ▐
+     ▌ strap                                    strap ▐
+     ▌  ╲                                          ╱  ▐
+ ═══hoop═[slot]═══════════════════════════════[slot]═hoop═══
+            ╲▄▄▄~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~▄▄▄╱
+             end   wires lying FLAT on the    end
+             plate      bottom head           plate
+ ─────────────────── bottom head ───────────────────────────
+```
+
+- The wires **and** the end plates lie **flat on the bottom head**, just inside
+  the hoop. The metal plates touching the head is normal.
+- The straps go **through the slots**, never over the top of the hoop. Over
+  the hoop lifts the plates off the head, and the wires buzz long and messy.
+- The wires are **centered**: straight across the middle, the same amount
+  sticking out on each side, and no strand touching the hoop.
+
+**Taking them off**
+
+1. Flip the lever to **OFF**.
+2. Loosen the clamp screw on **one** side (the strainer side is easiest) and
+   pull that strap out. Leave the other side attached.
+3. Swing the wires out to the side so they're clear of the head. Now tune the
+   bottom head.
+
+**Putting them back**
+
+Lay the drum upside down on a towel, bottom head facing up.
+
+1. **Check the hoop.** If you took the bottom hoop off, the slots may have
+   ended up in the wrong place. They must line up with the strainer and the
+   butt plate. If not, loosen the rods, turn the hoop, and retune.
+2. **Get the strainer ready.** Lever **OFF**, tension knob turned to about the
+   **middle**, so you can adjust both ways later.
+3. **Lay the wires down and center them** (see the picture).
+4. **Clamp the loose strap.** Push it through its slot and into the clamp.
+   **Pull it snug**: no sag, but don't stretch the wires. Hold it and tighten
+   the screw. Check that the wires are still centered.
+5. **Lever ON.** The wires should now lie tight and flat on the head.
+6. **Turn the drum over and set the knob** while tapping softly. A long, loose
+   rattle means a quarter turn tighter. Choked and boxy means a quarter turn
+   looser. Stop at the first spot where it sounds **short and crisp**.
+
+✅ **Test:** hit the drum with the lever OFF, then ON. OFF should sound like a
+tom, ON like a crisp snare. If the lever makes a clear difference, the wires
+are on right. From now on, adjust only with the knob. You don't need to touch
+the straps again.
+
+> 💡 **Teacher's tip:** Look along the wires from the side. If some strands sag
+> in the middle or are bent, the wires are worn out, and they'll buzz no
+> matter what you do. A new set is cheap and goes on exactly the same way.
+
 ## 2. The toms 
 
 **What we're after:** a round, singing tone, with each tom clearly lower than
@@ -189,6 +266,7 @@ beater that bounces back so your foot doesn't get tired.
 | A tom rings forever | Tune its bottom head a little higher than the top. Only then try a gel pad (like Moongel) |
 | A tom sounds dead, like cardboard | It's too loose, or the head is worn out. Tighten both heads evenly, or replace it |
 | The snare sounds choked | Loosen the bottom head a little, or loosen the wire tension knob |
+| The snare wires buzz on and on after each hit | Tune the bottom head higher, then tighten the wire knob a little. Still buzzing? Check that the straps go through the hoop slots and the wires lie flat and centered |
 | The kick goes "boing" like a basketball | The back head is too tight. Loosen it toward J.A.W. |
 
 > 💡 **Teacher's tip:** Gel and tape are for the *last 10%*. If the drum sounds
@@ -295,5 +373,5 @@ Pretty soon you'll hear a drum out of tune from across the room. Now go play! �
 - RTOM: [Black Hole Practice System](https://rtom.com/store/low-volume-heads/black-hole-practice-system-individual-sizes/).
 - Remo Silentstroke reviews and player reports: [MusicRadar](https://www.musicradar.com/reviews/drums/remo-silent-stroke-mesh-drum-heads-611723), [DrumSilent](https://www.drumsilent.com/review-remo-silentstroke-drum-heads/), [Drumming Basics](https://www.drummingbasics.com/remo-silent-stroke-vs-pearl-mesh-heads/).
 
-*The 💡 Teacher's tips and the "Here Comes the Bride" gap are common teaching
-advice rather than from the sources above.*
+*The 💡 Teacher's tips, the "Here Comes the Bride" gap and the snare-wire
+walkthrough are common teaching advice rather than from the sources above.*
