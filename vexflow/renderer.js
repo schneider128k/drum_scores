@@ -40,6 +40,7 @@ let MEASURE_BOXES = [];
 let OFFSET = 0;               // youtube_offset: video-seconds where score time 0 lands
 let YT_PLAYER = null;
 let YT_READY = false;
+let AUDIO_MODE = false;        // score.audio: an <audio> file stands in for YouTube — no ads, so Play auto-syncs
 let IS_PLAYING = false;       // mirrors the YT PLAYING state (NOT Tone.Transport — see ios-audiocontext note)
 let SYNCED = false;           // the PRESYNC gate: the bar stays parked at beat 1 until the user taps Sync.
                               // The YT IFrame API can't tell us a preroll ad is playing (getCurrentTime/
@@ -107,13 +108,15 @@ const LATENCY_LEAD = 0.05;   // s the bar leads the reported time
 // and (future) picker swaps.
 function buildSecondsAt(score) {
   const measures = score.measures || [];
-  const chosen = (score.youtube_candidates || [])
+  // A self-hosted recording (score.audio = {src, offset, points}) uses the exact
+  // same anchor model, in audio-file seconds instead of video seconds.
+  const chosen = score.audio || (score.youtube_candidates || [])
     .find(c => c.video_id === score.youtube_id);
   const points = chosen && chosen.points;
   if (!points || points.length < 2) return null;
 
   const n = measures.length;
-  const offset = Number(score.youtube_offset) || 0;
+  const offset = Number(score.audio ? score.audio.offset : score.youtube_offset) || 0;
   const mPos = measures.map(m => m.position[0] / m.position[1]);
   const mDur = measures.map(m => m.duration[0] / m.duration[1]);
 
@@ -2273,7 +2276,13 @@ function playerState() {
 function onTransport() {
   if (!YT_READY) return;
   switch (playerState()) {
-    case 'IDLE':    STARTED = true; try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {} YT_PLAYER.playVideo(); if (window.PlayerUI) PlayerUI.maybeShowSyncHint(); break;
+    case 'IDLE':
+      STARTED = true;
+      try { YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {}
+      YT_PLAYER.playVideo();
+      if (AUDIO_MODE) doSync();                    // no preroll ad → sync at once (also jumps to a preset loop)
+      else if (window.PlayerUI) PlayerUI.maybeShowSyncHint();
+      break;
     case 'PRESYNC': doSync(); break;
     case 'PLAYING': YT_PLAYER.pauseVideo(); break;
     case 'PAUSED':  YT_PLAYER.playVideo(); break;
@@ -2287,7 +2296,8 @@ function refreshTransport() {
   const s = playerState();
   const labels = { IDLE: '▶ Play', PRESYNC: '▶ Sync', PLAYING: '⏸ Pause', PAUSED: '▶ Play' };
   const hints = {
-    IDLE: 'Press Play. After any ad, tap Sync the moment the song starts.',
+    IDLE: AUDIO_MODE ? 'Press Play. The count-in leads you into bar 1.'
+                     : 'Press Play. After any ad, tap Sync the moment the song starts.',
     PRESYNC: 'Ad running? Wait or Skip — then tap Sync when the song starts.',
     PLAYING: '',
     PAUSED: 'Paused.',
@@ -2516,6 +2526,47 @@ function updateStatus(t) {
   el.textContent = parts.join('  ·  ');
 }
 
+function onPlayerStateChange(isPlaying) {
+  // A loop-back seek makes YT flicker through BUFFERING/PAUSED before it
+  // resumes PLAYING. That transient is NOT a real pause: don't let it flip
+  // the transport button back to "Play" or re-anchor the clock to a stale
+  // pre-seek time (the seek already hard-set the clock to the loop start).
+  const loopSeeking = LOOP_ON && performance.now() / 1000 < LOOP_SEEK_UNTIL;
+  IS_PLAYING = isPlaying;
+  if (IS_PLAYING) STARTED = true;            // play via the app button OR YouTube's own play → advance the button to Sync
+  if (IS_PLAYING && SYNCED && !loopSeeking) clkResync();
+  if (loopSeeking && !IS_PLAYING) return;    // keep showing "⏸ Pause" across the seam
+  refreshTransport();
+}
+
+// Self-hosted recording: an <audio> element wearing the small slice of the YT
+// IFrame API the transport/clock/loop code calls, so everything downstream is
+// shared. The dock's video box is hidden (nothing to show).
+function initAudio(src) {
+  AUDIO_MODE = true;
+  const box = document.getElementById('yt');
+  if (box) box.style.display = 'none';
+  const a = new Audio();
+  a.preload = 'auto';
+  a.preservesPitch = true;                   // slow-down practice keeps the key
+  a.src = src;
+  YT_PLAYER = {
+    getCurrentTime: () => a.currentTime,
+    getDuration: () => a.duration || 0,
+    seekTo: (t) => { a.currentTime = Math.max(0, t); },
+    playVideo: () => { a.play().catch(e => console.warn('audio play failed', e)); },
+    pauseVideo: () => a.pause(),
+    setPlaybackRate: (r) => { a.playbackRate = r; },
+    setVolume: (v) => { a.volume = Math.max(0, Math.min(1, v / 100)); },
+  };
+  a.addEventListener('playing', () => onPlayerStateChange(true));
+  a.addEventListener('pause', () => onPlayerStateChange(false));
+  a.addEventListener('ended', () => onPlayerStateChange(false));
+  a.addEventListener('seeked', () => { if (IS_PLAYING && SYNCED) clkResync(); });
+  YT_READY = true;                           // the button's click is the user gesture play() needs
+  refreshTransport();
+}
+
 function initYt(videoId) {
   window.onYouTubeIframeAPIReady = function () {
     YT_PLAYER = new YT.Player('yt', {
@@ -2523,18 +2574,7 @@ function initYt(videoId) {
       playerVars: { playsinline: 1 },
       events: {
         onReady: () => { YT_READY = true; refreshTransport(); },
-        onStateChange: (e) => {
-          // A loop-back seek makes YT flicker through BUFFERING/PAUSED before it
-          // resumes PLAYING. That transient is NOT a real pause: don't let it flip
-          // the transport button back to "Play" or re-anchor the clock to a stale
-          // pre-seek time (the seek already hard-set the clock to the loop start).
-          const loopSeeking = LOOP_ON && performance.now() / 1000 < LOOP_SEEK_UNTIL;
-          IS_PLAYING = (e.data === YT.PlayerState.PLAYING);
-          if (IS_PLAYING) STARTED = true;            // play via the app button OR YouTube's own play → advance the button to Sync
-          if (IS_PLAYING && SYNCED && !loopSeeking) clkResync();
-          if (loopSeeking && !IS_PLAYING) return;    // keep showing "⏸ Pause" across the seam
-          refreshTransport();
-        },
+        onStateChange: (e) => onPlayerStateChange(e.data === YT.PlayerState.PLAYING),
       },
     });
   };
@@ -2755,10 +2795,11 @@ function boot() {
   setupPrint(score);
   window.addEventListener('resize', onResize);
 
-  if (SCHED && ROWS.length && score.youtube_id) {
+  if (SCHED && ROWS.length && (score.audio || score.youtube_id)) {
     makeBar();
     applyLineMode();
-    initYt(score.youtube_id);
+    if (score.audio) initAudio(score.audio.src);
+    else initYt(score.youtube_id);
     startBarLoop();
   }
   refreshTransport();
