@@ -66,6 +66,7 @@ let IS_TAB = false;
 // kick, hi-hat foot) stems DOWN with beams below. A chord holding both stems up,
 // since it reads as one unison hit.
 let SPLIT_STEMS = false;
+let NO_CLEF = false;          // score.no_clef: drop the percussion clef (and its reserved width)
 let TUNING = null;            // MIDI numbers high→low (tab only)
 let NUM_LINES = 5;            // tab stave line count = TUNING.length
 // Cursor clock estimator: a type-2 (PI) tracking loop that fuses the quantised,
@@ -1151,7 +1152,7 @@ function applyProportionalSpacing(voice, usable) {
     let tk = 0; try { tk = ticks[i].getTicks().value(); } catch (_) {}
     acc += tk;
   }
-  const PAD = SPACING_PAD;
+  let PAD = SPACING_PAD;
   const gap = i => half[i] + half[i + 1] + PAD;   // min centre-to-centre
 
   // Feasibility: can the bar hold every note at its minimum centre-to-centre
@@ -1163,7 +1164,16 @@ function applyProportionalSpacing(voice, usable) {
   // monotonic) instead. (Come As You Are bars 27-29/31-32.)
   let need = half[0] + half[n - 1];
   for (let i = 0; i < n - 1; i++) need += gap(i);
-  if (need > usable) return;
+  // A MILD shortfall (≤ ~15%) is just generous footprints — a steady 8th groove at
+  // 4 bars/row needs ~235px of a ~214px bar. Shrink the min gaps uniformly and keep
+  // proportional spacing; VexFlow's justified fallback would jam the last note
+  // against the barline (no trailing space after "+ of 4"). Real crams still bail.
+  if (need > usable) {
+    const k = usable / need;
+    if (k < 0.85) return;
+    for (let i = 0; i < n; i++) half[i] *= k;
+    PAD *= k;
+  }
 
   // Project the ideal onset positions onto "monotone, ≥ min-gap apart, inside
   // [half[0], usable-half[n-1]]" in ONE forward sweep with a precomputed right cap.
@@ -1185,6 +1195,7 @@ function applyProportionalSpacing(voice, usable) {
   const M = new Array(n);
   M[n - 1] = usable - rightExt[n - 1];
   for (let i = n - 2; i >= 0; i--) M[i] = Math.min(M[i + 1] - gap(i), usable - rightExt[i]);
+  if (M[0] < half[0]) return;                        // can't stay monotone — keep VexFlow's layout
   const x = new Array(n);
   let lo = half[0];                                  // left edge / running min from prior note
   for (let i = 0; i < n; i++) {
@@ -1228,7 +1239,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     svgEl.style.height = '';
   }
 
-  const clefWidth = isFirstRow(rowIdx) ? CLEF_W : 0;
+  const clefWidth = isFirstRow(rowIdx) && !NO_CLEF ? CLEF_W : 0;
   const fullAvail = pageWidth - SIDE_MARGIN * 2 - clefWidth;   // hard cap: a row never exceeds the page
   const target = fullAvail * (fillFrac || 1);                 // fillFrac-reduced ideal width
   // Bar widths proportional to musical duration (not content density), floored at
@@ -1275,7 +1286,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
     if (i === 0 && isFirstRow(rowIdx)) {
       if (IS_TAB) { if (stave.addTabGlyph) stave.addTabGlyph(); }   // the "TAB" marker
-      else stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
+      else if (!NO_CLEF) stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
     }
     stave.setContext(ctx).draw();
     if (rowTopLineY === null) rowTopLineY = stave.getYForLine(0);
@@ -1634,6 +1645,7 @@ function renderScore(score, container, opts) {
   IS_TAB = INSTRUMENT !== 'drums';
   // Jazz two-voice engraving, opt-in per score. Never on for tab.
   SPLIT_STEMS = !IS_TAB && !!score.split_stems;
+  NO_CLEF = !IS_TAB && !!score.no_clef;
   // Up-stem beams share the space above the staff, so the accent band and the
   // number/label line both move up out of their way (see SPLIT_ACCENT_RISE).
   ACCENT_Y_RISE = SPLIT_STEMS ? SPLIT_ACCENT_RISE : ACCENT_RISE;
