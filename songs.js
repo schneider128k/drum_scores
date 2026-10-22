@@ -232,6 +232,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000003_1",
+    "song_id": 9000003,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "Herbie Hancock",
+    "title": "Cantaloupe Island",
+    "name": "Drums | Rock groove (straight 8ths)",
+    "lyrics": false
+  },
+  {
     "id": "9000001_1",
     "song_id": 9000001,
     "part_id": 1,
