@@ -1387,6 +1387,18 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       }
       ctx.restore();
     }
+
+    // Bar caption ("End After Solos", "Fine", …): a road-map instruction set
+    // right-aligned under the bar's closing barline. Drawn here rather than via the
+    // lyric channel so it reserves no width and leaves the note spacing alone.
+    if (m.caption) {
+      ctx.save();
+      ctx.setFont('Georgia', 15, 'bold', 'italic');
+      ctx.setFillStyle(NOTE_COLOR);
+      ctx.fillText(m.caption, x + myWidth - ctx.measureText(m.caption).width - 4,
+        stave.getYForLine(BOTTOM_LINE) + 38);
+      ctx.restore();
+    }
     x += myWidth;
 
     if (!voice) continue;
