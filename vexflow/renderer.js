@@ -327,14 +327,14 @@ function buildMeasureTickables(measure) {
       if (!g) { g = { members: [], n: ev.tuplet_n, m: ev.tuplet_m }; groups.set(ev.tuplet_group, g); }
       g.members.push({ rel, ev });
     } else if (ev.notes && ev.notes.length) {
-      plain.push({ rel, notes: ev.notes });
+      plain.push({ rel, notes: ev.notes, exact: ev.no_stretch ? ev.duration : null });
     }
   }
   if (plain.length === 0 && groups.size === 0) return { tickables: [], tuplets: [] };
 
   // One timeline anchor per plain note (instantaneous) and per tuplet group
   // (spans its summed actual duration). Sorted, they drive the stretch walk.
-  const anchors = plain.map(p => ({ kind: 'note', rel: p.rel, notes: p.notes }));
+  const anchors = plain.map(p => ({ kind: 'note', rel: p.rel, notes: p.notes, exact: p.exact }));
   for (const [gid, g] of groups) {
     g.members.sort((a, b) => a.rel[0] * b.rel[1] - b.rel[0] * a.rel[1]);
     let dur = [0, 1];
@@ -379,8 +379,20 @@ function buildMeasureTickables(measure) {
       continue;
     }
 
-    // Plain note: stretch to the next anchor.
-    const gap = fSub(nextPos, a.rel);
+    // Plain note: stretch to the next anchor — unless the event opts out with
+    // `no_stretch` (a short band hit followed by written rests: 8th + half rest
+    // reads as "hit and stop", a half note would read as "let it ring").
+    let gap = fSub(nextPos, a.rel);
+    if (a.exact && fLT(a.exact, gap)) {
+      const ld = lookupDur(a.exact);
+      if (ld) {
+        tokens.push({ type: 'note', dur: ld[0], dots: ld[1], notes: a.notes, relpos: a.rel });
+        cursor = fAdd(a.rel, a.exact);
+        for (const [rd, rdots] of fillRests(fSub(nextPos, cursor))) tokens.push({ type: 'rest', dur: rd, dots: rdots });
+        cursor = nextPos;
+        continue;
+      }
+    }
     const exact = lookupDur(gap);
     if (exact) {
       tokens.push({ type: 'note', dur: exact[0], dots: exact[1], notes: a.notes, relpos: a.rel });
