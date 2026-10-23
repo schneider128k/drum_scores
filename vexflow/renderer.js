@@ -1723,8 +1723,12 @@ function renderScore(score, container, opts) {
   const printRowHeight = () => {
     const sp = PRINT_LINE_SPACING;
     const hasLyrics = !!(lyrics && lyrics.length);
-    return Math.round(rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
-      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4));
+    const inked = rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
+      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4);
+    // Bar captions sit 38px under the bottom staff line (see renderRow) — keep them
+    // inside the row box, or print crops them in half.
+    const hasCaptions = measures.some(m => m.caption);
+    return Math.round(hasCaptions ? Math.max(inked, rowTop + 8 * sp + 38 + 6) : inked);
   };
   const rowHeight = (print && !IS_TAB)
     ? printRowHeight()
