@@ -47,7 +47,8 @@ let SYNCED = false;           // the PRESYNC gate: the bar stays parked at beat 
                               // getVideoData return the MAIN video during the ad), so a human taps Sync once
                               // the song is actually playing — same two-step UX as the deployed player.
 let STARTED = false;          // has the video been told to play at least once (IDLE vs PRESYNC)
-const RATES = [0.25, 0.5, 0.75, 1];   // YouTube-supported learning speeds
+let RATES = [0.25, 0.5, 0.75, 1];     // YouTube-supported learning speeds (audio mode swaps in BPM steps)
+let BASE_BPM = 0;                     // audio mode: the recording's tempo — speed shown as BPM, not %
 let RATE_IDX = RATES.length - 1;      // start at 100%
 let PLAYBACK_RATE = 1;        // scales the between-sample cursor advance (0.5× audio ⇒ half real-time)
 let MEASURE_TIMELINE = [];    // [{sec, idx, marker}] per measure downbeat — drives the status line
@@ -2502,7 +2503,28 @@ function setRate(delta) {
   try { if (YT_PLAYER) YT_PLAYER.setPlaybackRate(PLAYBACK_RATE); } catch (_) {}
   if (SYNCED) clkResync();   // re-anchor at the new rate so the bar doesn't lurch
   const el = document.getElementById('rate');
-  if (el) el.textContent = Math.round(PLAYBACK_RATE * 100) + '%';
+  if (el) el.textContent = BASE_BPM ? Math.round(PLAYBACK_RATE * BASE_BPM) + ' bpm'
+                                    : Math.round(PLAYBACK_RATE * 100) + '%';
+}
+
+// Audio mode: an <audio> element plays at any rate (pitch preserved), so speed
+// steps are 5 BPM from 60 up to the recording's tempo + 10 — a tempo ladder for
+// practice (90 → 95 → … → 115). ?bpm=90 opens at that step.
+function setupBpmSteps(bpm) {
+  BASE_BPM = bpm;
+  const steps = [];
+  for (let b = 60; b <= bpm + 10 + 1e-9; b += 5) steps.push(b);
+  if (!steps.includes(bpm)) steps.push(bpm);
+  steps.sort((a, b) => a - b);
+  RATES = steps.map(b => b / bpm);
+  RATE_IDX = steps.indexOf(bpm);
+  const want = parseFloat(new URLSearchParams(location.search).get('bpm'));
+  if (want > 0) {
+    let best = 0;
+    steps.forEach((b, i) => { if (Math.abs(b - want) < Math.abs(steps[best] - want)) best = i; });
+    RATE_IDX = best;
+  }
+  setRate(0);
 }
 
 function fmtTime(s) {
@@ -2798,7 +2820,11 @@ function boot() {
   if (SCHED && ROWS.length && (score.audio || score.youtube_id)) {
     makeBar();
     applyLineMode();
-    if (score.audio) initAudio(score.audio.src);
+    if (score.audio) {
+      initAudio(score.audio.src);
+      const tc = (score.tempo_changes || [])[0];
+      if (tc && tc.bpm) setupBpmSteps(tc.bpm);
+    }
     else initYt(score.youtube_id);
     startBarLoop();
   }
