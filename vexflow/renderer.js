@@ -321,9 +321,12 @@ function buildMeasureTickables(measure) {
   // ruled staff, barlines, bar number, and open space. That is a WORKSHEET bar —
   // the chart says a bar happens here and deliberately leaves what to play to the
   // player (or, on a lesson chart, to the teacher's pencil).
-  if (measure.simile || measure.blank) {
-    const r = new VF.StaveNote({ keys: ['b/4'], duration: 'wr' });
-    r.setStyle({ fillStyle: 'transparent', strokeStyle: 'transparent' });
+  //
+  // A `rest` bar is the same path with the whole rest VISIBLE: a written bar of
+  // silence (the drummer lays out — e.g. the call bars of a stop-time head).
+  if (measure.simile || measure.blank || measure.rest) {
+    const r = new VF.StaveNote({ keys: ['b/4'], duration: 'wr', align_center: !!measure.rest });
+    if (!measure.rest) r.setStyle({ fillStyle: 'transparent', strokeStyle: 'transparent' });
     r.__accent = 0;
     return { tickables: [r], tuplets: [] };
   }
@@ -2020,6 +2023,15 @@ function renderForm(score, container) {
   const title = document.createElement('div');
   title.className = 'formbox-title';
   title.textContent = 'Road map';
+  // Optional link to a fuller printable road map page (score.form_link = {href, text}).
+  if (score.form_link) {
+    const a = document.createElement('a');
+    a.className = 'formbox-link';
+    a.href = score.form_link.href;
+    a.textContent = score.form_link.text;
+    title.appendChild(document.createTextNode(' · '));
+    title.appendChild(a);
+  }
   wrap.appendChild(title);
   rows.forEach((r, i) => {
     const line = document.createElement('div');

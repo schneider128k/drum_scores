@@ -88,9 +88,8 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Bobby Timmons",
     "title": "Moanin'",
-    "name": "Drum road map (draft)",
-    "lyrics": false,
-    "href": "docs/moanin-roadmap.html"
+    "name": "Drums | Stop-time head (teacher) | ♩=120",
+    "lyrics": false
   },
   {
     "id": "3131_7",
