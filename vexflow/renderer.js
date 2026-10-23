@@ -1696,7 +1696,9 @@ function renderScore(score, container, opts) {
   ROWS = [];
   MEASURE_BOXES = [];
   container.innerHTML = '';
-  if (!IS_TAB) renderForm(score, container);
+  // `form_at_end`: the road map prints after the music — read it before the song,
+  // and page 1 starts straight on bar 1.
+  if (!IS_TAB && !score.form_at_end) renderForm(score, container);
 
   // Row capacity is FIXED as a musical TIME, not a bar count: 16 quarter-note beats
   // on iPad/print, 8 on a phone. That is four (resp. two) 4/4 bars — the historical
@@ -1836,6 +1838,7 @@ function renderScore(score, container, opts) {
   else if (wantRoadmap) renderRoadmap(score, container);
   else renderDrumKey(score, container);
   if (!IS_TAB) renderPerformanceNotes(score, container);
+  if (!IS_TAB && score.form_at_end) renderForm(score, container);
 }
 
 // Tab legend: the open-string tuning, low→high, named (the tab equivalent of the
