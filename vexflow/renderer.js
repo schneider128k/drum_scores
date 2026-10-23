@@ -1508,13 +1508,27 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     const beamRuns = (seq) => {
       const list = seq.filter(n => !(n.isRest && n.isRest()));
       if (!SPLIT_STEMS) return VF.Beam.generateBeams(list, beamOpts);
+      // Each run is also split at the beat lines by the notes' REAL bar position:
+      // generateBeams counts beats from the first note it is handed, so a run that
+      // starts off the beat (a crash on "+ of 1") would otherwise group 4 and "+ of 4"
+      // into different beats and leave them as two flags.
+      const beatLen = m.time_sig[1] ? 1 / m.time_sig[1] : 0.25;
+      const beatOf = n => Math.floor((n.__posf || 0) / beatLen + 1e-6);
       let out = [];
       let i = 0;
       while (i < list.length) {
         const up = !!list[i].__stemUp;
+        const beat = beatOf(list[i]);
         let j = i;
-        while (j < list.length && !!list[j].__stemUp === up) j++;
-        out = out.concat(VF.Beam.generateBeams(list.slice(i, j), up ? beamOptsUp : beamOpts));
+        while (j < list.length && !!list[j].__stemUp === up && beatOf(list[j]) === beat) j++;
+        const grp = list.slice(i, j);
+        if (grp.length >= 2) {
+          let ticks = 0;
+          for (const n of grp) ticks += n.getTicks().value();
+          const opts = Object.assign({}, up ? beamOptsUp : beamOpts,
+            { groups: [new VF.Fraction(Math.round(ticks), VF.RESOLUTION)] });
+          out = out.concat(VF.Beam.generateBeams(grp, opts));
+        }
         i = j;
       }
       return out;
