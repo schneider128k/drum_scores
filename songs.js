@@ -38,7 +38,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Bart Howard",
     "title": "Fly Me To The Moon",
-    "name": "Drums | Swing groove, cross-stick on 4 | ♩=120 | draft",
+    "name": "Drums | Swing groove, cross-stick on 4 | ♩=120",
     "lyrics": false
   },
   {
