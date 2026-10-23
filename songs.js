@@ -112,13 +112,13 @@ window.SONGS = [
     "lyrics": true
   },
   {
-    "id": "9000002_4",
+    "id": "9000002_5",
     "song_id": 9000002,
-    "part_id": 4,
+    "part_id": 5,
     "instrument": "drums",
     "artist": "Duke Ellington",
     "title": "Satin Doll",
-    "name": "Drums | iReal Pro Medium Swing ♩=112 | play-along",
+    "name": "Drums | Swing groove, cross-stick on 4 | ♩=112",
     "lyrics": false
   },
   {
