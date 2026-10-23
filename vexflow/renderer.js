@@ -1690,7 +1690,9 @@ function renderScore(score, container, opts) {
   LABEL_Y_RISE = SPLIT_STEMS ? SPLIT_LABEL_RISE : SECTION_RISE;
   TUNING = score.tuning || null;
   NUM_LINES = (IS_TAB && TUNING && TUNING.length) ? TUNING.length : (IS_TAB ? 6 : 5);
-  const measures = score.measures;
+  // `print_skip` bars stay on screen (the play-along cursor needs them) but are left
+  // off the printout — e.g. a solo section the player knows by heart.
+  const measures = print ? score.measures.filter(m => !m.print_skip) : score.measures;
   // Lyrics gated by the user's setting (PlayerUI); empty array = none drawn.
   const lyrics = (window.PlayerUI && !PlayerUI.lyricsOn()) ? [] : (score.lyrics || []);
   ROWS = [];
@@ -1727,19 +1729,19 @@ function renderScore(score, container, opts) {
   // above line 0) + the staff itself + the flat beam band below it (+ the lyric line
   // only where there are lyrics) + a hair of clearance. Tab rows keep the old fixed
   // box (their stems/lyrics stack differently); screen is untouched.
-  const printRowHeight = () => {
+  const printRowHeight = (rowBuilt) => {
     const sp = PRINT_LINE_SPACING;
     const hasLyrics = !!(lyrics && lyrics.length);
     const inked = rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
       + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4);
     // Bar captions sit 38px under the bottom staff line (see renderRow) — keep them
-    // inside the row box, or print crops them in half.
-    const hasCaptions = measures.some(m => m.caption);
+    // inside the row box, or print crops them in half. Only rows that carry one pay
+    // for it, so caption-free rows stay tight (more systems per page).
+    const hasCaptions = rowBuilt.some(b => b.m.caption);
     return Math.round(hasCaptions ? Math.max(inked, rowTop + 8 * sp + 38 + 6) : inked);
   };
-  const rowHeight = (print && !IS_TAB)
-    ? printRowHeight()
-    : (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
+  const fixedRowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
+  const rowHeightFor = (rowBuilt) => (print && !IS_TAB) ? printRowHeight(rowBuilt) : fixedRowHeight;
 
   // Build every measure once, then greedily pack bars into a row until the next bar
   // would push the row past ROW_BEATS quarter-note beats, with a forced break before
@@ -1764,7 +1766,7 @@ function renderScore(score, container, opts) {
   let cur = [];
   let curBeats = 0;
   for (const b of builtAll) {
-    const newSection = !!b.m.marker || !!b.m.row_break;   // every marked measure opens a fresh line
+    const newSection = !!b.m.marker || !!b.m.row_break || !!b.m.group_break;   // every marked measure opens a fresh line
     if (cur.length && (newSection || curBeats + beatsOf(b.m) > ROW_BEATS + BEAT_EPS)) {
       rows.push(cur); cur = []; curBeats = 0;
     }
@@ -1809,7 +1811,9 @@ function renderScore(score, container, opts) {
   };
 
   rows.forEach((rowBuilt, idx) => {
-    if (!group || rowBuilt[0].m.marker) newGroup();
+    // `group_break`: start a new page-break unit without a label (an 8-bar phrase
+    // inside a long section, so a 16-bar section may turn the page at its middle).
+    if (!group || rowBuilt[0].m.marker || rowBuilt[0].m.group_break) newGroup();
     const rowDiv = document.createElement('div');
     rowDiv.className = 'row';
     group.appendChild(rowDiv);
@@ -1822,7 +1826,7 @@ function renderScore(score, container, opts) {
     // fill proportionally and sit left-aligned.
     const fillFrac = fullRowWeight > 0 ? Math.min(1, rowWeight / fullRowWeight) : 1;
     try {
-      const rec = renderRow(rowBuilt, idx, rowDiv, W, fillFrac, rowHeight, rowTop);
+      const rec = renderRow(rowBuilt, idx, rowDiv, W, fillFrac, rowHeightFor(rowBuilt), rowTop);
       if (rec) ROWS.push(rec);
     } catch (e) {
       rowDiv.textContent = '[row render error: ' + e.message + ']';
