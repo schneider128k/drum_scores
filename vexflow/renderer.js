@@ -324,7 +324,9 @@ function buildMeasureTickables(measure) {
   //
   // A `rest` bar is the same path with the whole rest VISIBLE: a written bar of
   // silence (the drummer lays out — e.g. the call bars of a stop-time head).
-  if (measure.simile || measure.blank || measure.rest) {
+  // A `ghost` bar takes this path too, but renderRow draws nothing for it — it only
+  // reserves width (see renderRow).
+  if (measure.simile || measure.blank || measure.rest || measure.ghost) {
     const r = new VF.StaveNote({ keys: ['b/4'], duration: 'wr', align_center: !!measure.rest });
     if (!measure.rest) r.setStyle({ fillStyle: 'transparent', strokeStyle: 'transparent' });
     r.__accent = 0;
@@ -1294,6 +1296,9 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   for (let i = 0; i < built.length; i++) {
     const { m, notes, voice, tuplets } = built[i];
     const myWidth = widths[i] + (i === 0 ? clefWidth : 0);
+    // Ghost bar: empty space the width of a bar — no staff, number or notes. Used to
+    // indent an alternative ending so its bars sit directly under the bars they replace.
+    if (m.ghost) { x += myWidth; continue; }
     const stave = IS_TAB
       ? new VF.TabStave(x, rowTop, myWidth, { num_lines: NUM_LINES })
       : new VF.Stave(x, rowTop, myWidth,
@@ -1320,7 +1325,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
       ctx.save();
       ctx.setFont(...NUM_FONT);
       ctx.setFillStyle(SECTION_COLOR);
-      const label = '' + m.index;
+      const label = '' + (m.number != null ? m.number : m.index);   // `number`: printed bar number override
       const w = ctx.measureText(label).width;
       ctx.fillText(label, stave.getX() - w / 2, stave.getYForLine(0) - LABEL_Y_RISE);
       mNumRight = stave.getX() + w / 2;
@@ -1757,7 +1762,7 @@ function renderScore(score, container, opts) {
   let cur = [];
   let curBeats = 0;
   for (const b of builtAll) {
-    const newSection = !!b.m.marker;   // every marked measure opens a fresh line
+    const newSection = !!b.m.marker || !!b.m.row_break;   // every marked measure opens a fresh line
     if (cur.length && (newSection || curBeats + beatsOf(b.m) > ROW_BEATS + BEAT_EPS)) {
       rows.push(cur); cur = []; curBeats = 0;
     }
