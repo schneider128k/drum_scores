@@ -1290,6 +1290,9 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
           IS_PRINT ? { spacing_between_lines_px: PRINT_LINE_SPACING } : undefined);
     // Thin grey staff lines / barlines / clef.
     stave.setStyle({ strokeStyle: STAVE_COLOR, fillStyle: STAVE_COLOR, lineWidth: STAVE_LINE_WIDTH });
+    // Repeat barlines (opt-in per measure): a tag or vamp written once.
+    if (m.repeat_start) stave.setBegBarType(VF.Barline.type.REPEAT_BEGIN);
+    if (m.repeat_end) stave.setEndBarType(VF.Barline.type.REPEAT_END);
     if (i === 0 && isFirstRow(rowIdx)) {
       if (IS_TAB) { if (stave.addTabGlyph) stave.addTabGlyph(); }   // the "TAB" marker
       else if (!NO_CLEF) stave.addClef('percussion');   // clef only; the time signature is drawn ABOVE the staff (below)
@@ -1678,6 +1681,7 @@ function renderScore(score, container, opts) {
   ROWS = [];
   MEASURE_BOXES = [];
   container.innerHTML = '';
+  if (!IS_TAB) renderForm(score, container);
 
   // Row capacity is FIXED as a musical TIME, not a bar count: 16 quarter-note beats
   // on iPad/print, 8 on a phone. That is four (resp. two) 4/4 bars — the historical
@@ -1998,6 +2002,34 @@ function renderDrumKey(score, container) {
 // carries a `performance_notes` (string, or array of lines with the first line
 // used as a lead); absent on every other song, so nothing changes for them.
 // Plain text (textContent), so score data can't inject markup.
+// Road map ("form") box at the TOP of the chart: the big structure a player must not
+// forget — head / solos / head out / tag ending — so a chart written once can stand
+// for a whole performance without repeating bars. score.form = [{label, text}, …].
+function renderForm(score, container) {
+  const rows = score.form;
+  if (!rows || !rows.length) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'formbox';
+  const title = document.createElement('div');
+  title.className = 'formbox-title';
+  title.textContent = 'Road map';
+  wrap.appendChild(title);
+  rows.forEach((r, i) => {
+    const line = document.createElement('div');
+    line.className = 'formbox-row';
+    const lab = document.createElement('span');
+    lab.className = 'formbox-label';
+    lab.textContent = (i + 1) + '. ' + r.label;
+    const txt = document.createElement('span');
+    txt.className = 'formbox-text';
+    txt.textContent = r.text;
+    line.appendChild(lab);
+    line.appendChild(txt);
+    wrap.appendChild(line);
+  });
+  container.appendChild(wrap);
+}
+
 function renderPerformanceNotes(score, container) {
   const raw = score.performance_notes;
   if (!raw) return;

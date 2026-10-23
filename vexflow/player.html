@@ -133,6 +133,13 @@
     .perfnotes-lead { font-size: 13px; font-weight: 600; color: #333; line-height: 1.5; margin: 0 0 3px 2px; }
     .perfnotes-line { font-size: 13px; color: #444; line-height: 1.5; margin: 0 0 3px 2px; }
     @media print { .perfnotes { break-inside: avoid; page-break-inside: avoid; } }
+    .formbox { margin: 8px auto 18px; max-width: 760px; border: 1.5px solid #333; border-radius: 8px; padding: 10px 14px 8px; background: #fff; }
+    .formbox-title { font-size: 12px; font-weight: 700; color: #555; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; }
+    .formbox-row { display: flex; gap: 10px; font-size: 14px; line-height: 1.45; color: #222; margin: 0 0 4px; }
+    .formbox-label { flex: 0 0 8.5em; font-weight: 700; }
+    .formbox-text { flex: 1 1 auto; }
+    @media (max-width: 560px) { .formbox-row { flex-direction: column; gap: 0; } .formbox-label { flex: none; } }
+    @media print { .formbox { break-inside: avoid; page-break-inside: avoid; } }
 
     /* Print header — only appears in the printout (above the first row). */
     #print-header { display: none; }
