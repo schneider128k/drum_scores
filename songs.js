@@ -32,6 +32,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000005_1",
+    "song_id": 9000005,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "Bart Howard",
+    "title": "Fly Me To The Moon",
+    "name": "Drums | Swing groove, cross-stick on 4 | ♩=120 | draft",
+    "lyrics": false
+  },
+  {
     "id": "258_11",
     "song_id": 258,
     "part_id": 11,
