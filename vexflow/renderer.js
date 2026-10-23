@@ -113,7 +113,14 @@ function buildSecondsAt(score) {
   // same anchor model, in audio-file seconds instead of video seconds.
   const chosen = score.audio || (score.youtube_candidates || [])
     .find(c => c.video_id === score.youtube_id);
-  const points = chosen && chosen.points;
+  let points = chosen && chosen.points;
+  // Repeats (score.audio.order = chart bar per PERFORMED bar): the chart is written
+  // once, so its own timeline is linear — each chart bar once, at the recording's
+  // bar length. The audio shim maps file time ⇄ this chart time (see initAudio).
+  if (score.audio && score.audio.order && points && points.length >= 2) {
+    const barLen = points[1] - points[0];
+    points = measures.map((_, i) => points[0] + i * barLen).concat([points[0] + measures.length * barLen]);
+  }
   if (!points || points.length < 2) return null;
 
   const n = measures.length;
@@ -2282,9 +2289,14 @@ function startBarLoop() {
     if (YT_READY && SYNCED && (IS_PLAYING || loopSeeking)) {
       clkPredict(tau);                 // advance the smooth phase
       clkCorrect();                    // fuse a fresh YT sample if there is one
+      if (YT_PLAYER && YT_PLAYER.chartCap) {   // repeats: never predict past the bar being heard
+        const cap = YT_PLAYER.chartCap() - OFFSET;
+        if (CLK_M > cap) CLK_M = cap;
+      }
       // Subtract the user's Bluetooth audio-delay so the cursor matches what's HEARD.
       // (Loop seek/end checks below use CLK_M, not t, so practice loops are unaffected.)
       let t = CLK_M + LATENCY_LEAD - (window.PlayerUI ? PlayerUI.delaySec() : 0);
+      if (YT_PLAYER && YT_PLAYER.chartCap) t = Math.min(t, YT_PLAYER.chartCap() - OFFSET - 1e-3);
       // Monotonic latch: while playing the bar never steps back, independent of
       // gain tuning. A seek/resync releases it (CLK_OUT was reset in clkHardSet).
       if (t < CLK_OUT) t = CLK_OUT; else CLK_OUT = t;
@@ -2589,8 +2601,10 @@ function updateStatus(t) {
   let section = '';
   for (let k = i; k >= 0; k--) { if (MEASURE_TIMELINE[k].marker) { section = MEASURE_TIMELINE[k].marker; break; } }
   let ytNow = t + OFFSET, ytDur = 0;
-  try { ytNow = YT_PLAYER.getCurrentTime(); ytDur = YT_PLAYER.getDuration(); } catch (_) {}
+  try { ytNow = YT_PLAYER.fileTime ? YT_PLAYER.fileTime() : YT_PLAYER.getCurrentTime(); ytDur = YT_PLAYER.getDuration(); } catch (_) {}
   const parts = [`Bar ${MEASURE_TIMELINE[i].idx}/${MEASURE_TIMELINE.length}`];
+  const chorus = YT_PLAYER && YT_PLAYER.sectionLabel ? YT_PLAYER.sectionLabel() : '';
+  if (chorus) parts.unshift(chorus);
   if (section) parts.push(section);
   parts.push(`${fmtTime(ytNow)} / ${fmtTime(ytDur)}`);
   el.textContent = parts.join('  ·  ');
@@ -2612,7 +2626,8 @@ function onPlayerStateChange(isPlaying) {
 // Self-hosted recording: an <audio> element wearing the small slice of the YT
 // IFrame API the transport/clock/loop code calls, so everything downstream is
 // shared. The dock's video box is hidden (nothing to show).
-function initAudio(src) {
+function initAudio(audio) {
+  const src = audio.src;
   AUDIO_MODE = true;
   const box = document.getElementById('yt');
   if (box) box.style.display = 'none';
@@ -2620,10 +2635,65 @@ function initAudio(src) {
   a.preload = 'auto';
   a.preservesPitch = true;                   // slow-down practice keeps the key
   a.src = src;
+  // Repeats: `order[p]` is the chart bar heard in performed bar p (1-based chart
+  // index), `points[p]` its start in the file. getCurrentTime() reports CHART time,
+  // so at a repeat the clock sees a big backward residual and hard-sets — the cursor
+  // jumps back to bar 1 by itself. seekTo(chart time) lands in the chorus that's
+  // playing now (so a practice loop stays in the current chorus).
+  const order = audio.order, P = order ? order.length : 0, pts = audio.points;
+  const off = Number(audio.offset) || 0;
+  const barLen = P ? pts[1] - pts[0] : 0;
+  const perfIndex = (ta) => {
+    let p = 0;
+    while (p < P - 1 && pts[p + 1] <= ta) p++;
+    return p;
+  };
+  const toChart = (ta) => {
+    if (!P || ta < pts[0]) return ta;
+    const p = perfIndex(ta);
+    const f = Math.min(1.5, (ta - pts[p]) / (pts[p + 1] - pts[p]));
+    return off + (order[p] - 1 + f) * barLen;
+  };
+  // Pass number of each performed bar: a new pass starts wherever the chart bar
+  // number goes DOWN (bar 32 → bar 1 is a new chorus).
+  const pass = [];
+  for (let p = 0, k = 0; p < P; p++) { if (p && order[p] < order[p - 1]) k++; pass.push(k); }
+  const toFile = (tc) => {
+    if (!P || tc < off) return tc;
+    const c = Math.floor((tc - off) / barLen) + 1, f = (tc - off) / barLen - (c - 1);
+    const now = a.currentTime < pts[0] ? 0 : pass[perfIndex(a.currentTime)];
+    let best = -1;
+    for (let p = 0; p < P; p++) {
+      if (order[p] !== c) continue;
+      // Prefer this bar in the pass that's playing now; else the nearest pass.
+      const score = Math.abs(pass[p] - now) * 1e6 + Math.abs(pts[p] - a.currentTime);
+      const bestScore = best < 0 ? Infinity : Math.abs(pass[best] - now) * 1e6 + Math.abs(pts[best] - a.currentTime);
+      if (score < bestScore) best = p;
+    }
+    return best < 0 ? tc : pts[best] + f * (pts[best + 1] - pts[best]);
+  };
+  const sections = audio.sections || [];      // [{bar: performed bar (1-based), label}]
   YT_PLAYER = {
-    getCurrentTime: () => a.currentTime,
+    getCurrentTime: () => toChart(a.currentTime),
     getDuration: () => a.duration || 0,
-    seekTo: (t) => { a.currentTime = Math.max(0, t); },
+    fileTime: () => a.currentTime,
+    // End (chart time) of the bar being heard: the smooth clock must not predict
+    // past it, or at a repeat it would run into the NEXT chart bar (bar 33) for a few
+    // frames before the sample pulls it back to bar 1 — a visible flash/scroll jump.
+    chartCap: () => {
+      if (!P || a.currentTime < pts[0]) return Infinity;
+      const p = perfIndex(a.currentTime);
+      if (p === P - 1 || order[p + 1] === order[p] + 1) return Infinity;   // only at a jump
+      return off + order[p] * barLen;
+    },
+    sectionLabel: () => {
+      if (!P || a.currentTime < pts[0]) return '';
+      const p = perfIndex(a.currentTime) + 1;
+      let lab = '';
+      for (const s of sections) if (s.bar <= p) lab = s.label;
+      return lab;
+    },
+    seekTo: (t) => { a.currentTime = Math.max(0, toFile(t)); },
     playVideo: () => { a.play().catch(e => console.warn('audio play failed', e)); },
     pauseVideo: () => a.pause(),
     setPlaybackRate: (r) => { a.playbackRate = r; },
@@ -2869,7 +2939,7 @@ function boot() {
     makeBar();
     applyLineMode();
     if (score.audio) {
-      initAudio(score.audio.src);
+      initAudio(score.audio);
       const tc = (score.tempo_changes || [])[0];
       if (tc && tc.bpm) setupBpmSteps(tc.bpm);
     }
