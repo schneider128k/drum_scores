@@ -1935,6 +1935,7 @@ function esc(s) {
 // share the same oval head). Pieces with an identical notehead+position are
 // merged into one labelled entry. Rebuilt with the score on each (re)render.
 function renderDrumKey(score, container) {
+  if (score.no_drum_key) return;   // opt-out: the player already knows the symbols
   const used = new Set();
   const flammed = new Set();   // lily pieces that carry a flam ornament anywhere
   for (const m of (score.measures || []))
