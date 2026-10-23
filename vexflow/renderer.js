@@ -430,7 +430,9 @@ function buildMeasureTickables(measure) {
       // Stem direction. Single-voice default: always down. In split-stem (jazz)
       // mode an event goes stem-up if it carries ANY cymbal-voice piece, so the
       // ride line floats above and the kit hangs below.
-      const hasCymbal = t.notes.some(dn => (DRUM_MAP[dn.lily] || {}).voice === 1);
+      // A drum note may opt into the up voice (`stem_up`) so it beams with the
+      // cymbal line — e.g. a tom on "+ of 4" answering the ride on 4.
+      const hasCymbal = t.notes.some(dn => (DRUM_MAP[dn.lily] || {}).voice === 1 || dn.stem_up);
       const stemDir = (SPLIT_STEMS && hasCymbal) ? 1 : -1;
       n = new VF.StaveNote({ keys, duration: t.dur, stem_direction: stemDir });
       n.__stemUp = stemDir === 1;
