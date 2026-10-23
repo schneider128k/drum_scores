@@ -82,6 +82,17 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000004_1",
+    "song_id": 9000004,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "Bobby Timmons",
+    "title": "Moanin'",
+    "name": "Drum road map (draft)",
+    "lyrics": false,
+    "href": "docs/moanin-roadmap.html"
+  },
+  {
     "id": "3131_7",
     "song_id": 3131,
     "part_id": 7,

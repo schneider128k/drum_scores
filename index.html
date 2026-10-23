@@ -404,6 +404,7 @@ function highlight(text) {
 // A bubble links straight to a track. Guitar/bass force the teleprompter (the
 // conveyor view has no tab renderer); drums honour the chosen view.
 function trackHref(track) {
+  if (track.href) return track.href;   // link-only entry (no score), e.g. a road map page
   const file = track.instrument === 'drums' ? PLAYERS[view].file : PLAYERS.teleprompter.file;
   return `${file}?song=${encodeURIComponent(track.id)}`;
 }
