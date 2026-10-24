@@ -69,6 +69,8 @@ let IS_TAB = false;
 // since it reads as one unison hit.
 let SPLIT_STEMS = false;
 let NO_CLEF = false;          // score.no_clef: drop the percussion clef (and its reserved width)
+let NO_TIME_SIG = false;      // score.no_time_sig: don't print the meter (e.g. 4/4 on a one-page gig chart)
+let NO_BAR_NUMBERS = false;   // score.no_bar_numbers: print no measure numbers (less clutter on a gig chart)
 let TUNING = null;            // MIDI numbers high→low (tab only)
 let NUM_LINES = 5;            // tab stave line count = TUNING.length
 // Cursor clock estimator: a type-2 (PI) tracking loop that fuses the quantised,
@@ -1320,8 +1322,8 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // which sits at notehead height and collides with a high downbeat/"+ of 4" crash or
     // a cross-bar tie). Centred on the barline, at the section-label height so it clears
     // every notehead, accent and tie. General: applies to every bar of every song.
-    let mNumRight;   // right edge of the number, so a same-band section label/time sig clears it
-    {
+    let mNumRight = stave.getX();   // right edge of the number, so a same-band section label/time sig clears it
+    if (!NO_BAR_NUMBERS) {
       ctx.save();
       ctx.setFont(...NUM_FONT);
       ctx.setFillStyle(SECTION_COLOR);
@@ -1375,7 +1377,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // the accent band and the measure number; if the bar also carries a section label we
     // place it just after that label so the two never overlap.
     const prevM = measureByIndex(m.index - 1);
-    if (!prevM || prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1]) {
+    if (!NO_TIME_SIG && (!prevM || prevM.time_sig[0] !== m.time_sig[0] || prevM.time_sig[1] !== m.time_sig[1])) {
       ctx.save();
       const mx = topTextX;   // past the measure number and any section/bar label
       const my = stave.getYForLine(0) - LABEL_Y_RISE;
@@ -1684,6 +1686,8 @@ function renderScore(score, container, opts) {
   // Jazz two-voice engraving, opt-in per score. Never on for tab.
   SPLIT_STEMS = !IS_TAB && !!score.split_stems;
   NO_CLEF = !IS_TAB && !!score.no_clef;
+  NO_TIME_SIG = !!score.no_time_sig;
+  NO_BAR_NUMBERS = !!score.no_bar_numbers;
   // Up-stem beams share the space above the staff, so the accent band and the
   // number/label line both move up out of their way (see SPLIT_ACCENT_RISE).
   ACCENT_Y_RISE = SPLIT_STEMS ? SPLIT_ACCENT_RISE : ACCENT_RISE;
@@ -1698,6 +1702,18 @@ function renderScore(score, container, opts) {
   ROWS = [];
   MEASURE_BOXES = [];
   container.innerHTML = '';
+  // `print_scale` (0..1): shrink the whole printout uniformly (rows are SVGs at
+  // width:100%, so narrowing the container scales them) to fit a chart on fewer pages.
+  container.style.width = (print && score.print_scale) ? `${score.print_scale * 100}%` : '';
+  container.style.margin = (print && score.print_scale) ? '0 auto' : '';
+  // `print_title`: a small song title above bar 1 (print only) — for charts that drop
+  // the running page footer (`no_page_footer`).
+  if (print && score.print_title) {
+    const t = document.createElement('div');
+    t.textContent = score.title;
+    t.style.cssText = 'font: bold 12px Georgia, serif; color: #000; margin: 0 0 2px; text-align: right;';
+    container.appendChild(t);
+  }
   // `form_at_end`: the road map prints after the music — read it before the song,
   // and page 1 starts straight on bar 1.
   if (!IS_TAB && !score.form_at_end) renderForm(score, container);
@@ -1814,6 +1830,8 @@ function renderScore(score, container, opts) {
     // `group_break`: start a new page-break unit without a label (an 8-bar phrase
     // inside a long section, so a 16-bar section may turn the page at its middle).
     if (!group || rowBuilt[0].m.marker || rowBuilt[0].m.group_break) newGroup();
+    // `page_break`: this row starts a new printed page (e.g. the whole B + tag on page 2).
+    if (rowBuilt[0].m.page_break && group.childElementCount === 0) group.style.breakBefore = 'page';
     const rowDiv = document.createElement('div');
     rowDiv.className = 'row';
     group.appendChild(rowDiv);
@@ -2850,6 +2868,10 @@ function setPageStyle(orientation) {
   const s = SCORE_REF;
   const label = s ? `${s.artist} — ${s.title}   ·   ` : '';
   const foot = cssQuote(label) + ' "page " counter(page) " / " counter(pages)';
+  // `no_page_footer`: a one-page chart needs no "page 1 / 1".
+  const footBox = (s && s.no_page_footer) ? '' :
+    ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000;' +
+    ' vertical-align: top; }';
   // Paper size: US Letter is the default; A4 for metric printers (gear → Print).
   const paper = (window.PlayerUI && PlayerUI.paper && PlayerUI.paper() === 'a4') ? 'A4' : 'letter';
   // Margins as tight as is physically printable so the 4 bars stretch edge-to-edge and
@@ -2862,8 +2884,7 @@ function setPageStyle(orientation) {
   // running footer (Artist — Title · page N / total) still lets a shuffled stack reorder.
   el.textContent =
     '@page { size: ' + paper + ' ' + orientation + '; margin: 0.1in 0.1in 0.5in 0.1in;' +
-    ' @bottom-center { content: ' + foot + '; font: bold 8pt Arial, sans-serif; color: #000;' +
-    ' vertical-align: top; } }';
+    footBox + ' }';
 }
 
 function enterPrint(orientation) {
