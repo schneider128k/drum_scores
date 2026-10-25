@@ -318,8 +318,8 @@
       }).join('');
     })();
 
-    // Sound switcher: the original song (YouTube) or the GarageBand render of
-    // this version. Only shown when the score has a GarageBand recording.
+    // Sound switcher: the score's own sound (YouTube song, or a backing track:
+    // score.sound_label) or the GarageBand render of this version. Only shown when the score has a GarageBand recording.
     (function () {
       var SCORE = window.SCORE;
       var host = document.getElementById('sound-switch');
@@ -327,7 +327,7 @@
       var id = encodeURIComponent(SCORE.song_id + '_' + SCORE.part_id);
       var gb = SCORE.audio === SCORE.garageband_audio;
       host.innerHTML = '<span class="cap">Sound</span>' +
-        '<a class="isw' + (gb ? '' : ' on') + '" href="player.html?song=' + id + '">Original song</a>' +
+        '<a class="isw' + (gb ? '' : ' on') + '" href="player.html?song=' + id + '">' + (SCORE.sound_label || 'Original song') + '</a>' +
         '<a class="isw' + (gb ? ' on' : '') + '" href="player.html?song=' + id + '&sound=garageband">GarageBand drums</a>';
     })();
   </script>
