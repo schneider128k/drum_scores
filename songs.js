@@ -502,6 +502,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "52631_5",
+    "song_id": 52631,
+    "part_id": 5,
+    "instrument": "drums",
+    "artist": "Sade",
+    "title": "Smooth Operator",
+    "name": "Paul Anthony Cooke | Drums",
+    "lyrics": true
+  },
+  {
     "id": "1379_9",
     "song_id": 1379,
     "part_id": 9,
@@ -559,6 +569,16 @@ window.SONGS = [
     "artist": "The Cranberries",
     "title": "Zombie",
     "name": "Fergal Lawler | DW Collector Series Kit | Drums",
+    "lyrics": true
+  },
+  {
+    "id": "31621_2",
+    "song_id": 31621,
+    "part_id": 2,
+    "instrument": "drums",
+    "artist": "The Offspring",
+    "title": "Self Esteem",
+    "name": "Ron Welty - Drums",
     "lyrics": true
   },
   {

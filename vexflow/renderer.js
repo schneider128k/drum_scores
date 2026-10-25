@@ -2092,6 +2092,8 @@ function renderPerformanceNotes(score, container) {
 
   const wrap = document.createElement('div');
   wrap.className = 'perfnotes';
+  // Practice notes for the screen only: the one-page gig print stays one page.
+  if (score.perfnotes_screen_only) wrap.classList.add('screen-only');
   const title = document.createElement('div');
   title.className = 'perfnotes-title';
   title.textContent = 'Performance notes';
