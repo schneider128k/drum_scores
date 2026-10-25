@@ -152,6 +152,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "7421_7",
+    "song_id": 7421,
+    "part_id": 7,
+    "instrument": "drums",
+    "artist": "Foo Fighters",
+    "title": "My Hero",
+    "name": "Dave Grohl | Tama Artstar II | Drums",
+    "lyrics": true
+  },
+  {
     "id": "500775_9",
     "song_id": 500775,
     "part_id": 9,
