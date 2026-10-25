@@ -592,6 +592,16 @@ window.SONGS = [
     "lyrics": true
   },
   {
+    "id": "9000006_1",
+    "song_id": 9000006,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "The Offspring",
+    "title": "Self Esteem (simplified)",
+    "name": "Drums | Simplified: rock beat + kick on the \"a\" of 1",
+    "lyrics": true
+  },
+  {
     "id": "3706_7",
     "song_id": 3706,
     "part_id": 7,
