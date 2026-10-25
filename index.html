@@ -158,6 +158,11 @@
     }
     .bubble:hover { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
     .bubble .n { font-size: 10px; font-weight: 700; opacity: .8; }
+    /* Other versions (simplified drums, …) on their own line under the title. */
+    ul.songs li.has-versions { flex-wrap: wrap; }
+    ul.songs .versions { flex: 1 0 100%; font-size: 12px; color: var(--muted); }
+    ul.songs .versions a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    ul.songs .versions a:hover { text-decoration: underline; }
     @media (max-width: 480px) {
       ul.songs li { flex-wrap: wrap; gap: 7px; }
       .bubbles { width: 100%; }
@@ -358,8 +363,13 @@ if (!PLAYERS[view]) view = 'teleprompter';
 
 // Group tracks into songs. parts[instrument] = [track, …] (a song can have two
 // guitar tracks — Rhythm + Lead). Songs keep the manifest's artist→title order.
+// Other versions of a track (score.version_of = the original's id) don't get
+// their own entry; they're listed under the original: VERSIONS[id] = [track, …].
+const VERSIONS = {};
+for (const s of SONGS) if (s.version_of) (VERSIONS[s.version_of] = VERSIONS[s.version_of] || []).push(s);
 const SONG_MAP = new Map();
 for (const s of SONGS) {
+  if (s.version_of) continue;
   let song = SONG_MAP.get(s.song_id);
   if (!song) { song = { song_id: s.song_id, artist: s.artist, title: s.title, parts: {}, lyrics: false }; SONG_MAP.set(s.song_id, song); }
   (song.parts[s.instrument] = song.parts[s.instrument] || []).push(s);
@@ -437,9 +447,14 @@ function renderList() {
         const n = parts.length > 1 ? `<span class="n">×${parts.length}</span>` : '';
         return `<a class="bubble" href="${trackHref(track)}">${i.label}${n}</a>`;
       }).join('');
-      html += `<li><a class="song-title" href="${titleHref}">${highlight(s.title)}`
+      const vers = primary && VERSIONS[primary.id];
+      const versHtml = vers
+        ? `<span class="versions">Versions: <a href="${trackHref(primary)}">Original</a>`
+          + vers.map(v => ` · <a href="${trackHref(v)}">${v.version}</a>`).join('') + `</span>`
+        : ``;
+      html += `<li${vers ? ' class="has-versions"' : ''}><a class="song-title" href="${titleHref}">${highlight(s.title)}`
            +  (s.lyrics ? `<span class="lyric-dot">♪ lyrics</span>` : ``)
-           +  `</a><span class="bubbles">${bubbles}</span></li>`;
+           +  `</a><span class="bubbles">${bubbles}</span>${versHtml}</li>`;
     }
     html += `</ul>`;
   }

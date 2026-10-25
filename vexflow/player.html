@@ -195,6 +195,8 @@
   <div id="score"></div>
 
   <div id="dock">
+    <div class="iswitch" id="version-switch"></div>
+    <div class="iswitch" id="sound-switch"></div>
     <div class="iswitch" id="instrument-switch"></div>
     <div class="dock-top">
       <span id="status">Loading…</span>
@@ -250,6 +252,16 @@
       document.write('<script src="score_' + id + '.js"><\/script>');
     })();
   </script>
+  <!-- Sound option: ?sound=garageband plays the score's GarageBand render
+       (score.garageband_audio) instead of the YouTube video. -->
+  <script>
+    (function () {
+      var S = window.SCORE;
+      if (S && S.garageband_audio && new URLSearchParams(location.search).get('sound') === 'garageband') {
+        S.audio = S.garageband_audio;
+      }
+    })();
+  </script>
 
   <script src="vexflow.js"></script>
   <script src="../songs.js"></script>
@@ -265,7 +277,8 @@
       var SCORE = window.SCORE, SONGS = window.SONGS || [];
       var host = document.getElementById('instrument-switch');
       if (!SCORE || !host) return;
-      var sibs = SONGS.filter(function (s) { return s.song_id === SCORE.song_id; });
+      if (SCORE.version_of) return;   // versions switch via the Version pills
+      var sibs = SONGS.filter(function (s) { return s.song_id === SCORE.song_id && !s.version_of; });
       if (sibs.length < 2) return;   // nothing to switch between
       var rank = { drums: 0, guitar: 1, bass: 2 };
       sibs.sort(function (a, b) {
@@ -286,6 +299,36 @@
                encodeURIComponent(s.id) + '">' + label + '</a>';
       }).join('');
       host.innerHTML = html;
+    })();
+
+    // Version switcher: the original track plus every score that names it in
+    // `version_of` (simplified drums, …). Hidden when there's only one version.
+    (function () {
+      var SCORE = window.SCORE, SONGS = window.SONGS || [];
+      var host = document.getElementById('version-switch');
+      if (!SCORE || !host) return;
+      var cur = SCORE.song_id + '_' + SCORE.part_id;
+      var base = SCORE.version_of || cur;
+      var vers = SONGS.filter(function (s) { return s.version_of === base; });
+      if (!vers.length) return;
+      var all = [{ id: base, version: 'Original' }].concat(vers);
+      host.innerHTML = '<span class="cap">Version</span>' + all.map(function (s) {
+        return '<a class="isw' + (s.id === cur ? ' on' : '') + '" href="player.html?song=' +
+               encodeURIComponent(s.id) + '">' + s.version + '</a>';
+      }).join('');
+    })();
+
+    // Sound switcher: the original song (YouTube) or the GarageBand render of
+    // this version. Only shown when the score has a GarageBand recording.
+    (function () {
+      var SCORE = window.SCORE;
+      var host = document.getElementById('sound-switch');
+      if (!SCORE || !host || !SCORE.garageband_audio) return;
+      var id = encodeURIComponent(SCORE.song_id + '_' + SCORE.part_id);
+      var gb = SCORE.audio === SCORE.garageband_audio;
+      host.innerHTML = '<span class="cap">Sound</span>' +
+        '<a class="isw' + (gb ? '' : ' on') + '" href="player.html?song=' + id + '">Original song</a>' +
+        '<a class="isw' + (gb ? ' on' : '') + '" href="player.html?song=' + id + '&sound=garageband">GarageBand drums</a>';
     })();
   </script>
 </body>
