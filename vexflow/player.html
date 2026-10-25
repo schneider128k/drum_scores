@@ -252,14 +252,19 @@
       document.write('<script src="score_' + id + '.js"><\/script>');
     })();
   </script>
-  <!-- Sound option: ?sound=garageband plays the score's GarageBand render
-       (score.garageband_audio) instead of the YouTube video. -->
+  <!-- Sound options: ?sound=<key> plays one of the score's extra recordings
+       (score.extra_sounds = [{key, label, audio}], e.g. GarageBand renders)
+       instead of its own sound. score.garageband_audio is the one-option
+       shorthand (key "garageband", label "GarageBand drums"). -->
   <script>
     (function () {
       var S = window.SCORE;
-      if (S && S.garageband_audio && new URLSearchParams(location.search).get('sound') === 'garageband') {
-        S.audio = S.garageband_audio;
+      if (!S) return;
+      if (S.garageband_audio && !S.extra_sounds) {
+        S.extra_sounds = [{ key: 'garageband', label: 'GarageBand drums', audio: S.garageband_audio }];
       }
+      var key = new URLSearchParams(location.search).get('sound');
+      (S.extra_sounds || []).forEach(function (o) { if (o.key === key) S.audio = o.audio; });
     })();
   </script>
 
@@ -319,16 +324,20 @@
     })();
 
     // Sound switcher: the score's own sound (YouTube song, or a backing track:
-    // score.sound_label) or the GarageBand render of this version. Only shown when the score has a GarageBand recording.
+    // score.sound_label) plus its extra_sounds. Only shown when there are extras.
     (function () {
       var SCORE = window.SCORE;
       var host = document.getElementById('sound-switch');
-      if (!SCORE || !host || !SCORE.garageband_audio) return;
-      var id = encodeURIComponent(SCORE.song_id + '_' + SCORE.part_id);
-      var gb = SCORE.audio === SCORE.garageband_audio;
-      host.innerHTML = '<span class="cap">Sound</span>' +
-        '<a class="isw' + (gb ? '' : ' on') + '" href="player.html?song=' + id + '">' + (SCORE.sound_label || 'Original song') + '</a>' +
-        '<a class="isw' + (gb ? ' on' : '') + '" href="player.html?song=' + id + '&sound=garageband">GarageBand drums</a>';
+      var extras = SCORE && SCORE.extra_sounds;
+      if (!host || !extras || !extras.length) return;
+      var href = 'player.html?song=' + encodeURIComponent(SCORE.song_id + '_' + SCORE.part_id);
+      var cur = null;
+      extras.forEach(function (o) { if (SCORE.audio === o.audio) cur = o.key; });
+      var opts = [{ key: null, label: SCORE.sound_label || 'Original song' }].concat(extras);
+      host.innerHTML = '<span class="cap">Sound</span>' + opts.map(function (o) {
+        return '<a class="isw' + (o.key === cur ? ' on' : '') + '" href="' + href +
+               (o.key ? '&sound=' + encodeURIComponent(o.key) : '') + '">' + o.label + '</a>';
+      }).join('');
     })();
   </script>
 </body>
