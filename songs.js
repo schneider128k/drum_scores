@@ -148,7 +148,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Duke Ellington",
     "title": "Satin Doll",
-    "name": "Drums | Swing groove, set-up fills into B and the next chorus | ♩=112",
+    "name": "Drums | Swing groove, set-up fills at the end of each section | ♩=112",
     "lyrics": false,
     "version_of": "9000002_5",
     "version": "With fills"
