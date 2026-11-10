@@ -684,6 +684,7 @@ function buildTabMeasureTickables(measure) {
 }
 
 const ROW_HEIGHT = 215;
+const CAPTION_LOW_DROP = 18;  // extra px under the staff for a `caption_low` bar caption
 const ROW_TOP = 55;          // headroom above the stave for section label + accent band
 // Measure numbers live in the top annotation band — above EVERY notehead, accent and
 // tie — at this fixed rise above the top staff line, the same band as section labels.
@@ -1428,12 +1429,14 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // Bar caption ("End After Solos", "Fine", …): a road-map instruction set
     // right-aligned under the bar's closing barline. Drawn here rather than via the
     // lyric channel so it reserves no width and leaves the note spacing alone.
+    // `caption_low` drops it a line further, clear of a down-stem note (kick with a
+    // flag) at the very end of the bar.
     if (m.caption) {
       ctx.save();
       ctx.setFont('Georgia', 15, 'bold', 'italic');
       ctx.setFillStyle(NOTE_COLOR);
       ctx.fillText(m.caption, x + myWidth - ctx.measureText(m.caption).width - 4,
-        stave.getYForLine(BOTTOM_LINE) + 38);
+        stave.getYForLine(BOTTOM_LINE) + 38 + (m.caption_low ? CAPTION_LOW_DROP : 0));
       ctx.restore();
     }
     x += myWidth;
@@ -1754,7 +1757,8 @@ function renderScore(score, container, opts) {
     // inside the row box, or print crops them in half. Only rows that carry one pay
     // for it, so caption-free rows stay tight (more systems per page).
     const hasCaptions = rowBuilt.some(b => b.m.caption);
-    return Math.round(hasCaptions ? Math.max(inked, rowTop + 8 * sp + 38 + 6) : inked);
+    const capDrop = rowBuilt.some(b => b.m.caption && b.m.caption_low) ? CAPTION_LOW_DROP : 0;
+    return Math.round(hasCaptions ? Math.max(inked, rowTop + 8 * sp + 38 + capDrop + 6) : inked);
   };
   const fixedRowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
   const rowHeightFor = (rowBuilt) => (print && !IS_TAB) ? printRowHeight(rowBuilt) : fixedRowHeight;
