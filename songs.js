@@ -154,6 +154,18 @@ window.SONGS = [
     "version": "With fills"
   },
   {
+    "id": "9000002_8",
+    "song_id": 9000002,
+    "part_id": 8,
+    "instrument": "drums",
+    "artist": "Duke Ellington",
+    "title": "Satin Doll",
+    "name": "Drums | Swing groove, conga groove in the B, set-up fills | ♩=112",
+    "lyrics": false,
+    "version_of": "9000002_5",
+    "version": "Conga groove in B"
+  },
+  {
     "id": "86505_7",
     "song_id": 86505,
     "part_id": 7,
