@@ -708,5 +708,17 @@ window.SONGS = [
     "lyrics": true,
     "version_of": "21511_14",
     "version": "Ensemble"
+  },
+  {
+    "id": "9000007_2",
+    "song_id": 9000007,
+    "part_id": 2,
+    "instrument": "drums",
+    "artist": "Wham!",
+    "title": "Last Christmas (our arrangement, compact)",
+    "name": "Drums | Ensemble version: kick 1 & 3, cross-stick verses",
+    "lyrics": true,
+    "version_of": "21511_14",
+    "version": "Compact print"
   }
 ];

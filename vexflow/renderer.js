@@ -741,6 +741,15 @@ let LABEL_Y_RISE = SECTION_RISE;
 const LYRIC_GAP = 26;        // px below the flat beam for the (flat) lyric baseline
 const PRINT_LYRIC_GAP = 16;  // print pulls the lyric line up a touch so the taller staff +
                              // lyrics still fit one row box (keeps the page count steady)
+// Second lyric line (lyric.line === 1): the 2nd verse under the 1st, for a chart that
+// prints a repeated section once (repeat_start/repeat_end) with both verses' words.
+const LYRIC_LINE2_GAP = 16;  // px between the two lyric baselines
+let HAS_LYRIC2 = false;      // set per score in renderScore()
+// Print: section/bar labels (Fill, Chorus …) sit this much lower, and every row gets this
+// much air under its lyrics, so a label reads as belonging to the staff BELOW it — not to
+// the previous row's lyrics (Pawel, 2026-11-13).
+const PRINT_LABEL_DROP = 8;
+const PRINT_ROW_AIR = 10;
 
 // Two palettes. SCREEN is the Songsterr look: note heads the only dark element,
 // everything else grey, so on a bright display the eye lands on the notes. PRINT
@@ -817,6 +826,15 @@ function drawAccentBand(ctx, stave, notes) {
 // time, kept in order so the line reads left to right.
 function attachLyrics(notes, measure, lyrics) {
   if (!lyrics || !lyrics.length) return;
+  attachLyricLine(notes, measure, lyrics.filter(l => !l.line), '');
+  if (HAS_LYRIC2) attachLyricLine(notes, measure, lyrics.filter(l => l.line === 1), '2');
+}
+
+// One lyric line. sfx '' = first line (note.__lyric/__cont), '2' = second line
+// (note.__lyric2/__cont2). Both share one width-reserving annotation holding the
+// longer of the two texts.
+function attachLyricLine(notes, measure, lyrics, sfx) {
+  if (!lyrics.length) return;
   const mStart = frac(measure.position);
   const mDur = frac(measure.duration);
   const syl = [];
@@ -839,19 +857,19 @@ function attachLyrics(notes, measure, lyrics) {
       ni++;
     }
     const note = cand[ni];
-    if (note.__lyric) {
-      // Overflow (more syllables than notes): merge onto this note.
-      note.__lyric += ' ' + s.text;
-      note.__cont = s.cont;
-      note.__ann.text = note.__lyric;
+    const key = '__lyric' + sfx, ckey = '__cont' + sfx;
+    // Overflow (more syllables than notes): merge onto this note.
+    note[key] = note[key] ? note[key] + ' ' + s.text : s.text;
+    note[ckey] = s.cont;
+    const widest = [note.__lyric || '', note.__lyric2 || ''].sort((a, b) => b.length - a.length)[0];
+    if (note.__ann) {
+      note.__ann.text = widest;
     } else {
       // Reserve width with the bare syllable; the hyphen is drawn later,
       // centred in the gap to the next syllable (see drawRowLyrics).
-      const ann = new VF.Annotation(s.text);
+      const ann = new VF.Annotation(widest);
       ann.setFont(...LYRIC_FONT);
       note.addModifier(ann, 0);
-      note.__lyric = s.text;
-      note.__cont = s.cont;
       note.__ann = ann;
     }
     ni = Math.min(ni + 1, cand.length - 1);
@@ -1271,6 +1289,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   const widths = allocateWidths(weights, floors, target, fullAvail);
 
   const rowLyrics = [];   // {x, text, cont} collected across the row, drawn last
+  const rowLyrics2 = [];  // same, second lyric line (2nd verse)
   const rowChords = [];   // {x, text} tab chord names, drawn above the staff
   const pmFlow = [];      // {x, on} per tab note in row order → P.M. dashed spans
   let rowTopLineY = null; // y of the first stave's top line (chord/P.M. placement)
@@ -1634,13 +1653,14 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
     // Collect this bar's lyrics (drawn together afterwards so hyphens can span
     // bar lines). Cursor anchors are per-barline now (captured above), not per-note.
     for (const n of notes) {
-      if (!n.__lyric) continue;
+      if (!n.__lyric && !n.__lyric2) continue;
       // Centre x under the note. StaveNotes expose note-head begin/end; TabNotes
       // don't, so fall back to the formatted absolute x there.
       const lx = (n.getNoteHeadBeginX && n.getNoteHeadEndX)
         ? (n.getNoteHeadBeginX() + n.getNoteHeadEndX()) / 2
         : (n.getAbsoluteX ? n.getAbsoluteX() : 0);
-      rowLyrics.push({ x: lx, text: n.__lyric, cont: n.__cont });
+      if (n.__lyric) rowLyrics.push({ x: lx, text: n.__lyric, cont: n.__cont });
+      if (n.__lyric2) rowLyrics2.push({ x: lx, text: n.__lyric2, cont: n.__cont2 });
     }
   }
 
@@ -1652,6 +1672,7 @@ function renderRow(built, rowIdx, container, pageWidth, fillFrac, rowHeight, row
   }
 
   drawRowLyrics(ctx, baselineY, rowLyrics);
+  drawRowLyrics(ctx, baselineY + LYRIC_LINE2_GAP, rowLyrics2);
 
   if (!SCHED || rowStartPos === null) return null;
 
@@ -1694,7 +1715,8 @@ function renderScore(score, container, opts) {
   // Up-stem beams share the space above the staff, so the accent band and the
   // number/label line both move up out of their way (see SPLIT_ACCENT_RISE).
   ACCENT_Y_RISE = SPLIT_STEMS ? SPLIT_ACCENT_RISE : ACCENT_RISE;
-  LABEL_Y_RISE = SPLIT_STEMS ? SPLIT_LABEL_RISE : SECTION_RISE;
+  LABEL_Y_RISE = (SPLIT_STEMS ? SPLIT_LABEL_RISE : SECTION_RISE) - (print ? PRINT_LABEL_DROP : 0);
+  HAS_LYRIC2 = (score.lyrics || []).some(l => l.line === 1);
   TUNING = score.tuning || null;
   NUM_LINES = (IS_TAB && TUNING && TUNING.length) ? TUNING.length : (IS_TAB ? 6 : 5);
   // `print_skip` bars stay on screen (the play-along cursor needs them) but are left
@@ -1739,7 +1761,7 @@ function renderScore(score, container, opts) {
   // than the default headroom, so push the staff down by exactly what we lifted the
   // label line and give the row box the same amount back — otherwise the labels of
   // the first row clip against the top of the SVG and later rows collide.
-  const TOP_STACK_EXTRA = LABEL_Y_RISE - SECTION_RISE;
+  const TOP_STACK_EXTRA = Math.max(0, LABEL_Y_RISE - SECTION_RISE);
   const rowTop = (print ? PRINT_ROW_TOP : ROW_TOP) + TOP_STACK_EXTRA;
   // Print crops each row to what it actually INKS instead of a fixed box: the SVG's
   // unused bottom band is the white space you see between systems on the page, and a
@@ -1752,7 +1774,9 @@ function renderScore(score, container, opts) {
     const sp = PRINT_LINE_SPACING;
     const hasLyrics = !!(lyrics && lyrics.length);
     const inked = rowTop + 4 * sp + 4 * sp + PRINT_BEAM_DROP
-      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4);
+      + (hasLyrics ? PRINT_LYRIC_GAP + 6 : 4)
+      + (hasLyrics && rowBuilt.some(r => r.notes.some(n => n.__lyric2)) ? LYRIC_LINE2_GAP : 0)
+      + PRINT_ROW_AIR;
     // Bar captions sit 38px under the bottom staff line (see renderRow) — keep them
     // inside the row box, or print crops them in half. Only rows that carry one pay
     // for it, so caption-free rows stay tight (more systems per page).
@@ -1760,7 +1784,8 @@ function renderScore(score, container, opts) {
     const capDrop = rowBuilt.some(b => b.m.caption && b.m.caption_low) ? CAPTION_LOW_DROP : 0;
     return Math.round(hasCaptions ? Math.max(inked, rowTop + 8 * sp + 38 + capDrop + 6) : inked);
   };
-  const fixedRowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA;
+  const fixedRowHeight = (print ? PRINT_ROW_HEIGHT : ROW_HEIGHT) + (IS_TAB ? TAB_ROW_EXTRA : 0) + TOP_STACK_EXTRA
+    + (HAS_LYRIC2 && lyrics.length ? LYRIC_LINE2_GAP : 0);
   const rowHeightFor = (rowBuilt) => (print && !IS_TAB) ? printRowHeight(rowBuilt) : fixedRowHeight;
 
   // Build every measure once, then greedily pack bars into a row until the next bar
