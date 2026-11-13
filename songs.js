@@ -686,5 +686,27 @@ window.SONGS = [
     "title": "Hot For Teacher",
     "name": "Alex Van Halen | Lead kit - Ludwig Classic Maple",
     "lyrics": true
+  },
+  {
+    "id": "21511_14",
+    "song_id": 21511,
+    "part_id": 14,
+    "instrument": "drums",
+    "artist": "Wham!",
+    "title": "Last Christmas",
+    "name": "George Michael | LinnDrum | Drum Machine",
+    "lyrics": true
+  },
+  {
+    "id": "9000007_1",
+    "song_id": 9000007,
+    "part_id": 1,
+    "instrument": "drums",
+    "artist": "Wham!",
+    "title": "Last Christmas (our arrangement)",
+    "name": "Drums | Ensemble version: kick 1 & 3, cross-stick verses",
+    "lyrics": true,
+    "version_of": "21511_14",
+    "version": "Ensemble"
   }
 ];
