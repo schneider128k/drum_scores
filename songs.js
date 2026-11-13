@@ -704,7 +704,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Wham!",
     "title": "Last Christmas (our arrangement)",
-    "name": "Drums | Ensemble version: kick 1 & 3, cross-stick verses",
+    "name": "Drums | Ensemble version: kick 1 & 3, Fill 1 / Fill 2",
     "lyrics": true,
     "version_of": "21511_14",
     "version": "Ensemble"
@@ -716,7 +716,7 @@ window.SONGS = [
     "instrument": "drums",
     "artist": "Wham!",
     "title": "Last Christmas (our arrangement, compact)",
-    "name": "Drums | Ensemble version: kick 1 & 3, cross-stick verses",
+    "name": "Drums | Ensemble version: kick 1 & 3, Fill 1 / Fill 2",
     "lyrics": true,
     "version_of": "21511_14",
     "version": "Compact print"
