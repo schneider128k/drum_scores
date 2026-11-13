@@ -2435,7 +2435,8 @@ function refreshTransport() {
   const s = playerState();
   const labels = { IDLE: '▶ Play', PRESYNC: '▶ Sync', PLAYING: '⏸ Pause', PAUSED: '▶ Play' };
   const hints = {
-    IDLE: AUDIO_MODE ? 'Press Play. The count-in leads you into bar 1.'
+    IDLE: MIX ? 'Press Play. The record and your drums start together.'
+        : AUDIO_MODE ? 'Press Play. The count-in leads you into bar 1.'
                      : 'Press Play. After any ad, tap Sync the moment the song starts.',
     PRESYNC: 'Ad running? Wait or Skip — then tap Sync when the song starts.',
     PLAYING: '',
@@ -2778,11 +2779,105 @@ function initAudio(audio) {
     setVolume: (v) => { a.volume = Math.max(0, Math.min(1, v / 100)); },
   };
   a.addEventListener('playing', () => onPlayerStateChange(true));
-  a.addEventListener('pause', () => onPlayerStateChange(false));
+  a.addEventListener('pause', () => { if (!a.__hold) onPlayerStateChange(false); });
   a.addEventListener('ended', () => onPlayerStateChange(false));
   a.addEventListener('seeked', () => { if (IS_PLAYING && SYNCED) clkResync(); });
+  if (audio.video) { initVideoFollow(a, audio.video); return; }
   YT_READY = true;                           // the button's click is the user gesture play() needs
   refreshTransport();
+}
+
+// Mix mode (score.audio.video = YouTube id): the original record plays in the dock's
+// video box and the drum file follows it. The file is laid out on the VIDEO's
+// timeline (file second t = video second t), so following is just keeping the two
+// clocks equal. The cursor still reads the audio element (repeats, loops, sections
+// all keep working); the video is the master the audio is slaved to.
+let MIX = null;
+function initVideoFollow(a, videoId) {
+  const shim = YT_PLAYER;
+  let yt = null, ytState = -1, base = 1;
+  const lv = { rec: 1, drums: 1, fade: 1 };
+  const applyVol = () => {
+    a.volume = Math.max(0, Math.min(1, lv.drums * lv.fade));
+    try { if (yt) yt.setVolume(Math.round(100 * lv.rec * lv.fade)); } catch (_) {}
+  };
+  const PLAYING = 1, ENDED = 0;
+  const hold = () => { if (!a.paused) { a.__hold = true; a.pause(); } };
+  const release = () => { a.__hold = false; };
+  // YouTube's getCurrentTime is quantised (it lags, then jumps), so the drift
+  // a - yt is over-estimated between updates; the smallest recent sample is the truth.
+  let win = [];
+  const follow = () => {
+    if (!yt || !yt.getCurrentTime) return;
+    const vt = yt.getCurrentTime();
+    if (ytState === PLAYING) {
+      if (a.paused && a.__hold) { a.currentTime = vt; release(); a.play().catch(() => {}); win = []; return; }
+      if (a.paused) return;
+      const now = performance.now();
+      win.push([now, a.currentTime - vt]);
+      win = win.filter(w => now - w[0] < 1200);
+      if (win.length < 4) return;
+      const drift = Math.min(...win.map(w => w[1]));
+      if (Math.abs(drift) > 0.25) { a.currentTime = vt; win = []; a.playbackRate = base; return; }
+      const nudge = Math.abs(drift) < 0.015 ? 0 : Math.max(-0.03, Math.min(0.03, drift * 0.4));
+      a.playbackRate = base * (1 - nudge);
+    } else if (!a.paused) {
+      if (ytState === ENDED) a.pause();            // the record ended: stop the drums too
+      else hold();                                  // buffering / ad / paused in the video itself: wait for it
+    }
+  };
+  YT_PLAYER = Object.assign({}, shim, {
+    playVideo: () => {
+      a.play().catch(e => console.warn('audio play failed', e));   // inside the tap: unlocks iOS audio
+      if (yt) yt.playVideo();
+      if (ytState !== PLAYING) hold();
+    },
+    pauseVideo: () => { release(); a.pause(); if (yt) yt.pauseVideo(); },
+    seekTo: (t) => { shim.seekTo(t); if (yt) yt.seekTo(a.currentTime, true); win = []; },
+    setPlaybackRate: (r) => { base = r; a.playbackRate = r; try { yt.setPlaybackRate(r); } catch (_) {} },
+    setVolume: (v) => { lv.fade = Math.max(0, Math.min(1, v / 100)); applyVol(); },
+  });
+  MIX = {
+    set: (k, v) => { lv[k] = v; applyVol(); },
+    get: (k) => lv[k],
+  };
+  window.onYouTubeIframeAPIReady = function () {
+    yt = new YT.Player('yt', {
+      videoId, width: 160, height: 90,
+      playerVars: { playsinline: 1 },
+      events: {
+        onReady: () => { applyVol(); YT_READY = true; refreshTransport(); setInterval(follow, 100); },
+        onStateChange: (e) => {
+          ytState = e.data;
+          // Play/pause pressed in the video box itself: carry the drums along.
+          if (ytState === PLAYING && a.paused && !a.__hold) { a.currentTime = yt.getCurrentTime(); a.play().catch(() => {}); }
+          follow();
+        },
+      },
+    });
+  };
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+  const box = document.getElementById('yt');
+  if (box) box.style.display = '';
+  mountMixSliders();
+}
+
+// Two volume sliders (record / drums) beside the video box, mix mode only.
+function mountMixSliders() {
+  const box = document.getElementById('yt');
+  if (!box || document.getElementById('mix')) return;
+  const el = document.createElement('div');
+  el.id = 'mix';
+  el.innerHTML = ['rec', 'drums'].map(k =>
+    `<label><span>${k === 'rec' ? 'Record' : 'Drums'}</span>` +
+    `<input type="range" min="0" max="100" value="100" data-k="${k}" aria-label="${k === 'rec' ? 'Record' : 'Drums'} volume"></label>`).join('');
+  el.addEventListener('input', e => {
+    const k = e.target.dataset && e.target.dataset.k;
+    if (k && MIX) MIX.set(k, e.target.value / 100);
+  });
+  box.parentNode.insertBefore(el, box);
 }
 
 function initYt(videoId) {
@@ -3022,7 +3117,7 @@ function boot() {
     if (score.audio) {
       initAudio(score.audio);
       const tc = (score.tempo_changes || [])[0];
-      if (tc && tc.bpm) setupBpmSteps(tc.bpm);
+      if (tc && tc.bpm && !score.audio.video) setupBpmSteps(tc.bpm);   // the video can't follow fine speed steps
     }
     else initYt(score.youtube_id);
     startBarLoop();
